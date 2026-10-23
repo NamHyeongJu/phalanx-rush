@@ -5,16 +5,36 @@ const Engine = (() => {
   // ---------- images ----------
   const images = {};
 
+  // Retries with backoff: a fresh deploy or a flaky mobile link can drop a few requests.
   function loadImage(src) {
     if (images[src]) return images[src].promise;
     const el = new Image();
+    const url = asset(src);
+    let tries = 0;
     const promise = new Promise((resolve) => {
       el.onload = () => resolve(el);
-      el.onerror = () => { console.warn('image failed', src); resolve(null); };
+      el.onerror = () => {
+        tries++;
+        if (tries > 4 || url.startsWith('data:')) { console.warn('image failed', src); resolve(null); return; }
+        setTimeout(() => { el.src = url + (url.includes('?') ? '&' : '?') + 'retry=' + tries; }, 400 * tries * tries);
+      };
     });
-    el.src = asset(src);
+    el.src = url;
     images[src] = { el, promise };
     return promise;
+  }
+
+  // Loads many images a few at a time instead of all at once.
+  async function loadAll(list, onEach) {
+    let next = 0;
+    const worker = async () => {
+      while (next < list.length) {
+        const src = list[next++];
+        await loadImage(src);
+        if (onEach) onEach(src);
+      }
+    };
+    await Promise.all(Array.from({ length: 10 }, worker));
   }
 
   function img(src) {
@@ -131,6 +151,7 @@ const Engine = (() => {
 
     const armR = P(S.armR), handR = P(S.handR);
     const shoulder = at('armR'), hand = at('weapon');
+    if (!layerA.length) return null; // parts not loaded (yet); callers skip drawing
     L = {
       A: composite(layerA),
       B: layerB.length ? composite(layerB) : null,
@@ -157,6 +178,7 @@ const Engine = (() => {
 
   // s: world px per prescaled px. pose (native px / radians): bob, lunge, tilt, arm, wpn, thrust
   function drawLook(g, L, x, y, s, flip, pose, flash) {
+    if (!L) return;
     const F = flash ? flashOf(L) : null;
     g.save();
     g.translate(x, y);
@@ -241,5 +263,5 @@ const Engine = (() => {
     },
   };
 
-  return { loadImage, img, scaledCanvas, recolor, look, drawLook, PS, Sfx };
+  return { loadImage, loadAll, img, scaledCanvas, recolor, look, drawLook, PS, Sfx };
 })();

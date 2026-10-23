@@ -327,12 +327,9 @@ const Game = (() => {
     const dt = Math.min(0.05, (now - last) / 1000 || 0);
     last = now;
     coinSfxT -= dt;
-    try {
-      for (let i = 0; i < S.speed; i++) Battle.update(dt);
-      Battle.draw();
-      UI.tick(dt);
-    } catch (e) {
-      if (!frame.reported) { frame.reported = true; console.error(e); }
+    // Each stage is guarded on its own so a drawing glitch never freezes the HUD.
+    for (const step of [() => { for (let i = 0; i < S.speed; i++) Battle.update(dt); }, () => Battle.draw(), () => UI.tick(dt)]) {
+      try { step(); } catch (e) { if (!frame.reported) { frame.reported = true; console.error(e); } }
     }
     saveT += dt;
     if (saveT > 10) { saveT = 0; save(); }
@@ -351,7 +348,7 @@ const Game = (() => {
     urls.add('assets/ui/rank-flare.png');
     let done = 0;
     const list = [...urls];
-    await Promise.all(list.map((u) => Engine.loadImage(u).then(() => { done++; bar.style.width = (done / list.length * 100) + '%'; })));
+    await Engine.loadAll(list, () => { done++; bar.style.width = (done / list.length * 100) + '%'; });
     try {
       const fonts = Promise.all(['ONE Mobile POP', 'Jua'].map((f) => document.fonts.load(`16px "${f}"`, '가')));
       await Promise.race([fonts, new Promise((r) => setTimeout(r, 2500))]);

@@ -1037,7 +1037,7 @@ const Battle = (() => {
     for (const it of drawList) {
       if (it.dying) continue;
       const u = it.s || it.e;
-      if (u.dead || u.hp >= u.maxHp - 0.01 || (it.e && it.e.T.boss)) continue;
+      if (!u.look || u.dead || u.hp >= u.maxHp - 0.01 || (it.e && it.e.T.boss)) continue;
       const d = depth(u.y) * (u.scale || 1);
       const x = (it.s ? B.px + u.ox : u.x) - B.camX;
       const y = u.y + u.look.A.y * (CHAR_S / Engine.PS) * d - 3;

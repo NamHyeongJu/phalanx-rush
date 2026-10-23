@@ -64,6 +64,7 @@ const UI = (() => {
     if (!s) return;
     const C = CLASSES[s.cls];
     const L = Engine.look({ set: s.set, face: 0, weapon: C.weapons[s.grade], shield: !!C.shield });
+    if (!L) return;
     const sc = (H * 0.86) / -L.A.y;
     const pose = C.role === 2 ? { arm: -1.15, wpn: 1.15 } : C.role === 3 ? { arm: -0.55, wpn: -0.75 } : { wpn: C.idle || 0 };
     Engine.drawLook(g, L, W * 0.46, H * 0.95, sc, false, pose);
