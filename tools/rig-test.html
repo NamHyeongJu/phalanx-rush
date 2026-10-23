@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Rig test</title>
+<style>body{margin:0;background:#7a8a9a}canvas{display:block}</style>
+<canvas id="c" width="1200" height="900"></canvas>
+<script src="../js/manifest.js"></script>
+<script>
+  // Paths in the manifest are relative to the game root.
+  for (const s of Object.values(MANIFEST.sets)) for (const p of Object.values(s)) p.f = '../' + p.f;
+  for (const p of MANIFEST.faces) p.f = '../' + p.f;
+  for (const p of Object.values(MANIFEST.weapons)) p.f = '../' + p.f;
+</script>
+<script src="../js/engine.js"></script>
+<script>
+(async () => {
+  const all = [];
+  for (const s of Object.values(MANIFEST.sets)) for (const p of Object.values(s)) all.push(p.f);
+  for (const p of MANIFEST.faces) all.push(p.f);
+  for (const p of Object.values(MANIFEST.weapons)) all.push(p.f);
+  await Promise.all(all.map(Engine.loadImage));
+  const g = document.getElementById('c').getContext('2d');
+  const sets = Object.keys(MANIFEST.sets);
+  const weapons = ['gladius', 'pike', 'battleAxe', 'morningstar', 'warBow', 'musket', 'staff', 'flameSword', 'halberd'];
+  const s = 0.155 / Engine.PS;
+  sets.forEach((set, i) => {
+    const x = 60 + (i % 9) * 125, y = 120 + Math.floor(i / 9) * 150;
+    const wpn = weapons[i % weapons.length];
+    const L = Engine.look({ set, face: i % 4, weapon: wpn, shield: i % 2 === 0 });
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(x, y, 22, 6, 0, 0, 7); g.fill();
+    Engine.drawLook(g, L, x, y, s * 1.6, false, {});
+    g.fillStyle = '#fff'; g.font = '10px sans-serif'; g.fillText(set.replace('-v1', ''), x - 50, y + 20);
+  });
+  // poses
+  const L = Engine.look({ set: 'roman-legionary-v1', weapon: 'gladius', shield: true });
+  const poses = [{}, { arm: -1.6, wpn: 0.4 }, { arm: 0.3, wpn: 0.6 }, { thrust: 25 }, { arm: -1.2, wpn: 1.2 }, { bob: 8, tilt: 0.08 }];
+  poses.forEach((p, i) => Engine.drawLook(g, L, 80 + i * 110, 600, s * 1.8, false, p));
+  const orc = Engine.look({ set: 'orc-monster-v1', weapon: 'cleaver' });
+  Engine.drawLook(g, orc, 780, 600, s * 1.8, true, {});
+  const orcR = Engine.look({ set: 'orc-monster-v1', weapon: 'bigClub', tint: ['#ff3b2f', 'hue', 0.75] });
+  Engine.drawLook(g, orcR, 900, 600, s * 1.8, true, {});
+  const orcP = Engine.look({ set: 'orc-monster-v1', weapon: 'staff', tint: ['#9b4dff', 'hue', 0.8] });
+  Engine.drawLook(g, orcP, 1020, 600, s * 1.8, true, {});
+  const orcB = Engine.look({ set: 'orc-monster-v1', weapon: 'battleAxe', tint: ['#3a3a5a', 'multiply', 0.55] });
+  Engine.drawLook(g, orcB, 1120, 600, s * 1.8, true, {}, true);
+  // phalanx preview
+  for (let lane = 0; lane < 8; lane++) for (let r = 5; r >= 0; r--) {
+    const set = ['roman-legionary-v1', 'medieval-handmade-02-v1', 'bronze-handmade-01-v1'][(lane + r) % 3];
+    const Lp = Engine.look({ set, face: lane % 4, weapon: r < 2 ? 'pike' : 'warBow', shield: r < 2 });
+    const d = 0.84 + 0.16 * lane / 7;
+    Engine.drawLook(g, Lp, 200 + (5 - r) * 26 * 1.2, 680 + lane * 18.5 * 1.2, s * d * 1.2, false, {});
+  }
+  document.title = 'done';
+})();
+</script>
