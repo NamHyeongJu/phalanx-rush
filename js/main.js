@@ -18,7 +18,7 @@ const Game = (() => {
       auto: true, farm: false, army: null,
       quest: { i: 0, base: 0 },
       stats: { kills: 0, forges: 0, sells: 0, upgrades: 0, skillSummons: 0, bosses: 0, deaths: 0 },
-      lastSeen: Date.now(), sound: true, speed: 1,
+      lastSeen: Date.now(), sound: true, speed: 1, cheat: false,
     };
   }
 
@@ -381,6 +381,14 @@ const Game = (() => {
     UI.offlinePopup(capped, gold, dice, () => { S.gold += gold; S.dice += dice; });
   }
 
+  // Settings cheat: keeps every currency topped up while it is on.
+  function cheatTick() {
+    if (!S.cheat) return;
+    S.gold = Math.max(S.gold, 1e15);
+    S.gems = Math.max(S.gems, 1e6);
+    S.dice = Math.max(S.dice, 9999);
+  }
+
   // ---------- loop ----------
   let last = 0, saveT = 0;
   function frame(now) {
@@ -392,7 +400,7 @@ const Game = (() => {
     const steps = [
       () => { for (let i = 0; i < S.speed; i++) Battle.update(dt); },
       () => Battle.draw(),
-      () => { diceTick(); autoForgeTick(dt); UI.tick(dt); },
+      () => { cheatTick(); diceTick(); autoForgeTick(dt); UI.tick(dt); },
     ];
     for (const step of steps) {
       try { step(); } catch (e) { if (!frame.reported) { frame.reported = true; console.error(e); } }

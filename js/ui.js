@@ -693,12 +693,14 @@ const UI = (() => {
     const sheet = openModal(`<h2 class="mtitle">설정</h2>
       <div class="setrow"><span>효과음</span><button class="btn small ui-button ${S.sound ? '' : 'sell-button'}" id="mSnd">${S.sound ? '켜짐' : '꺼짐'}</button></div>
       <div class="setrow"><span>전투 속도</span><button class="btn small ui-button" id="mSpd">x${S.speed}</button></div>
+      <div class="setrow"><span>치트: 무한 골드·보석·주사위</span><button class="btn small ui-button ${S.cheat ? 'gold' : 'sell-button'}" id="mCheat">${S.cheat ? '켜짐' : '꺼짐'}</button></div>
       <div class="setrow"><span>최고 스테이지</span><b>${F.stageLabel(S.maxStage)}</b></div>
       <div class="setrow"><span>처치한 오크</span><b>${fmt(S.stats.kills)}</b></div>
       <div class="setrow"><span>굴린 주사위</span><b>${fmt(S.stats.forges)}</b></div>
       <div class="mbtns"><button class="btn small ui-button sell-button" id="mReset">데이터 초기화</button></div>`, { cls: 'small' });
     tap($('#mSnd', sheet), () => { S.sound = !S.sound; Engine.Sfx.on = S.sound; updateHudButtons(); openSettings(); });
     tap($('#mSpd', sheet), () => { S.speed = S.speed === 1 ? 2 : 1; updateHudButtons(); openSettings(); });
+    tap($('#mCheat', sheet), () => { S.cheat = !S.cheat; sfx('UiTap', 0.5); openSettings(); });
     let armed = false;
     tap($('#mReset', sheet), (ev) => {
       if (!armed) { armed = true; ev.currentTarget.textContent = '정말 초기화할까요? 한 번 더 누르세요'; return; }
