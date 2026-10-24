@@ -317,11 +317,11 @@ const Game = (() => {
     return p * (1 + mods.crit * (mods.critDmg - 1)) * mods.aspd;
   }
 
-  // One spearman and one archer per file; the empty middle rank is the first thing to recruit.
+  // Two spearmen and two archers per file; the empty middle ranks are the first thing to recruit.
   function starterArmy() {
     for (let l = 0; l < LANES; l++) {
-      Battle.addSoldier('spear', l === 2 ? 1 : 0, { lane: l });
-      Battle.addSoldier('bow', 0, { lane: l });
+      for (let i = 0; i < 2; i++) Battle.addSoldier('spear', l === 4 || l === 5 ? 1 : 0, { lane: l });
+      for (let i = 0; i < 2; i++) Battle.addSoldier('bow', 0, { lane: l });
     }
   }
 
@@ -329,7 +329,8 @@ const Game = (() => {
     const secs = (Date.now() - S.lastSeen) / 1000;
     if (secs < 120) return;
     const capped = Math.min(secs, 8 * 3600);
-    const gold = F.goldPerKill(S.stage) * mods.gold * 10 * (capped / 60) * 0.5;
+    // Half the gold of 20 kills a minute (orcs come in twice the numbers at half the bounty).
+    const gold = F.goldPerKill(S.stage) * mods.gold * 20 * (capped / 60) * 0.5;
     UI.offlinePopup(capped, gold, () => { S.gold += gold; });
   }
 
@@ -359,6 +360,7 @@ const Game = (() => {
     for (const n of ['arrow', 'sparkle', 'dust', 'explosion', 'ring', 'zap', 'CannonGas', 'ImpactCrater', 'ImpactSmokeRing', 'StormCloudFlash', 'StormCloudIdle']) urls.add('assets/vfx/' + n + '.png');
     for (const n of ['coin', 'plus']) urls.add('assets/icons/' + n + '.png');
     urls.add('assets/ui/rank-flare.png');
+    urls.add(HERO.mount); urls.add(HERO.front);
     let done = 0;
     const list = [...urls];
     await Engine.loadAll(list, () => { done++; bar.style.width = (done / list.length * 100) + '%'; });

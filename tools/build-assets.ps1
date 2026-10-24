@@ -173,6 +173,10 @@ Slice-Sheet (Join-Path $art "UI\skills-growth.png") 3 2 @("meat", "fist", "rage"
 $vfx = @{ "StormCloudFlash" = 360; "StormCloudIdle" = 360; "OrbitalImpact\ImpactCrater" = 420; "OrbitalImpact\ImpactSmokeRing" = 420; "Cannon\CannonGas" = 360; "WarDrum\WarDrum" = 240; "WarDrum\DrumMallet" = 120 }
 foreach ($k in $vfx.Keys) { Save-Resized (Join-Path $art "VFX\$k.png") (Join-Path $out ("vfx\" + [IO.Path]::GetFileName($k) + ".png")) $vfx[$k] }
 
+# The hero's Roman chariot (forge-clone-2 mount_name_11, Roman Biga); the foreground piece is drawn over the rider.
+New-Item -ItemType Directory -Force (Join-Path $out "mounts") | Out-Null
+foreach ($k in "12-roman-biga", "12-roman-biga-foreground") { Save-Resized (Join-Path $art "Mounts\$k.png") (Join-Path $out ("mounts\" + $k.Substring(3) + ".png")) 560 }
+
 Save-Resized (Join-Path $art "UI\character-preview-forest.png") (Join-Path $out "bg\forest.jpg") 1600
 $eras = @{ "01-primitive" = "canyon"; "03-classical" = "classical"; "04-medieval" = "medieval"; "05-exploration" = "coast"; "02-bronze" = "nile" }
 foreach ($k in $eras.Keys) { Save-Resized (Join-Path $art "Environments\Eras\$k\distant.png") (Join-Path $out "bg\$($eras[$k]).jpg") 1024 }

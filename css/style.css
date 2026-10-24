@@ -415,19 +415,20 @@ img.ci { width: 18px; height: 18px; object-fit: contain; }
   box-shadow: inset 0 3px 0 rgba(255, 255, 255, .2);
 }
 .flabel { display: flex; justify-content: space-between; font-size: 10px; color: #fff; margin: 0 2px 4px; }
-.formation { display: grid; grid-template-columns: repeat(var(--ranks, 3), minmax(0, 78px)); justify-content: center; gap: 5px; }
+.flabel.bot { margin: 4px 2px 0; }
+.formation { display: grid; grid-template-columns: repeat(var(--cols, 12), minmax(0, 34px)); justify-content: center; gap: 2px; }
 .cell {
   position: relative; aspect-ratio: 1; padding: 0; overflow: hidden;
-  border-radius: 8px; border: 2px solid rgba(40, 20, 0, .45);
+  border-radius: 5px; border: 1.5px solid rgba(40, 20, 0, .45);
   background: linear-gradient(color-mix(in srgb, var(--gc) 40%, #2a2f57), color-mix(in srgb, var(--gc) 75%, #161a30));
 }
 .cell canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.cell .hp { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 3px; background: rgba(0, 0, 0, .5); border-radius: 2px; }
-.cell .hp b { display: block; height: 100%; width: 0; background: #6dff6a; border-radius: 2px; }
+.cell .hp { position: absolute; left: 2px; right: 2px; bottom: 2px; height: 2px; background: rgba(0, 0, 0, .5); border-radius: 1px; }
+.cell .hp b { display: block; height: 100%; width: 0; background: #6dff6a; border-radius: 1px; }
 .cell.empty { border-style: dashed; background: rgba(60, 30, 0, .18); }
 .cell.empty .hp { display: none; }
-.cell.empty::after { content: "+"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; color: rgba(60, 30, 0, .4); text-shadow: none; }
-.cell.sel { outline: 3px solid #fff; outline-offset: -2px; }
+.cell.empty::after { content: "+"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; color: rgba(60, 30, 0, .4); text-shadow: none; }
+.cell.sel { outline: 2px solid #fff; outline-offset: -2px; }
 .sinfo {
   display: flex; align-items: center; gap: 10px;
   min-height: 78px; margin-top: 8px; padding: 8px;

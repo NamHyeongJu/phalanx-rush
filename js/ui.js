@@ -317,20 +317,21 @@ const UI = (() => {
     const t = $('#tab-army');
     t.innerHTML = `<div class="tabhead"><h2>방진 편성</h2><div class="armystat"><img src="${asset('assets/ui/combat-power-small.png')}" alt=""><b id="armyPower">0</b></div></div>
       <div class="gradebar" id="gradeBar"></div>
-      <div class="formation-wrap"><div class="flabel"><span>◀ 후열</span><span>전열 ▶</span></div><div class="formation" id="formation"></div></div>
+      <div class="formation-wrap"><div class="flabel"><span>▲ 전열 (적 방향)</span><span>${LANES}줄 × ${RANKS}열</span></div><div class="formation" id="formation"></div><div class="flabel bot"><span>▼ 후열 · 궁수</span></div></div>
       <div class="sinfo" id="soldierInfo"><p class="hint">병사를 눌러 정보를 확인하세요</p></div>
       <div class="armybtns"><button class="btn purple" id="btnMerge"><img class="ci" src="${asset('assets/vfx/sparkle.png')}" alt=""><span>합성</span></button>
         <button class="btn gold" id="btnFill">${GOLD}<span>빈자리 모두 보충</span></button></div>
       <p class="hint">같은 등급 병사 3명을 합성하면 한 단계 높은 등급 병사 1명이 됩니다. 남는 자리는 뽑기로 채우세요!</p>`;
+    // Seen from above: one column per file, the front rank on top.
     const grid = $('#formation', t);
-    grid.style.setProperty('--ranks', RANKS);
-    for (let l = 0; l < LANES; l++) {
-      for (let c = 0; c < RANKS; c++) {
+    grid.style.setProperty('--cols', LANES);
+    for (let r = 0; r < RANKS; r++) {
+      for (let l = 0; l < LANES; l++) {
         const cell = el('button', 'cell', '<canvas></canvas><i class="hp"><b></b></i>');
         cell.dataset.lane = l;
-        cell.dataset.rank = RANKS - 1 - c;
+        cell.dataset.rank = r;
         tap(cell, () => {
-          const s = Battle.B.lanes[l].find((o) => o.rank === RANKS - 1 - c);
+          const s = Battle.B.lanes[l].find((o) => o.rank === r);
           selectedSoldier = s || null;
           sfx('UiTap', 0.4);
           refreshArmyTab(true);

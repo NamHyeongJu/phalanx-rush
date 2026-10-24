@@ -3,12 +3,17 @@
 
 const Battle = (() => {
   const VW = 400;            // virtual width; height follows the canvas aspect
-  const LANE_SP = 24;
-  const RANK_SP = 42;
-  const FRONT_X = 212;       // screen x of the front rank
-  const CHAR_S = 0.155;      // virtual px per native sprite px
+  const U = 0.5;             // unit scale: soldiers and orcs are drawn at half size
+  const LANE_SP = 24 * U;
+  const RANK_SP = 42 * U;
+  const FRONT_X = 218;       // screen x of the front rank
+  const CHAR_S = 0.155 * U;  // virtual px per native sprite px
   const MARCH = 36;
-  const CONTACT = 28;        // gap an orc keeps in front of the soldier it fights
+  const CONTACT = 28 * U;    // gap an orc keeps in front of the soldier it fights
+  const HERO_S = 0.155 * 0.8; // the commander is drawn a little larger than his men
+  const HERO_UNIT = 100 * HERO_S; // virtual px per Unity unit for the chariot rig
+  // Rider x behind the front rank: the formation, a short gap, then the horses.
+  const HERO_BACK = (RANKS - 1) * RANK_SP + 10 + (HERO.offsetX + HERO.width / 2) * HERO_UNIT;
 
   let cv, g, dpr = 1, k = 1, VH = 400;
   let laneY0 = 200, groundTop = 180;
@@ -22,12 +27,14 @@ const Battle = (() => {
     state: 'run', stateT: 0, boss: null, banner: null, flash: null,
     shake: 0, cd: {}, castGap: 0, aspdT: 0, aspdV: 0, themeIdx: -1, themeFade: 0,
     goldAnchor: { x: 60, y: -20 }, dmgStat: [0, 0],
+    hero: { x: null, castT: 0, dustT: 0 },
   };
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const lerp = (a, b, t) => a + (b - a) * t;
   const laneY = (l) => laneY0 + l * LANE_SP;
+  const midY = () => laneY0 + (LANES - 1) * LANE_SP / 2;
   const depth = (y) => 0.84 + 0.16 * clamp((y - laneY0) / ((LANES - 1) * LANE_SP), 0, 1);
   const sfx = (n, v, r) => Engine.Sfx.play(n, v, r);
   const IMG = (p) => Engine.img(p);
@@ -48,7 +55,7 @@ const Battle = (() => {
     k = r.width / VW;
     VH = r.height / k;
     laneY0 = VH - 26 - (LANES - 1) * LANE_SP;
-    groundTop = laneY0 - 34;
+    groundTop = laneY0 - 30;
     for (let l = 0; l < LANES; l++) for (const s of B.lanes[l]) s.y = laneY(l);
   }
 
@@ -68,7 +75,7 @@ const Battle = (() => {
     lane.forEach((s, i) => { s.idx = i; s.rank = s.C.role >= 2 ? back++ : front++; });
   }
 
-  const slotX = (l, i) => -i * RANK_SP + ((l & 1) ? 5 : 0);
+  const slotX = (l, i) => -i * RANK_SP + ((l & 1) ? 5 * U : 0);
   const aliveCount = () => B.lanes.reduce((a, l) => a + l.length, 0);
 
   function addSoldier(cls, grade, opt = {}) {
@@ -129,7 +136,7 @@ const Battle = (() => {
         for (const s of trio) {
           const lane = B.lanes[s.lane];
           lane.splice(lane.indexOf(s), 1);
-          B.fx.push({ kind: 'spark', x: B.px + s.ox, y: s.y - 20, t: 0, dur: 0.35, crit: true });
+          B.fx.push({ kind: 'spark', x: B.px + s.ox, y: s.y - 20 * U, t: 0, dur: 0.35, crit: true });
         }
         trio.forEach((s) => sortLane(s.lane));
         made.push(addSoldier(cls, gIdx + 1, { drop: true, lane: trio[0].lane }));
@@ -166,7 +173,7 @@ const Battle = (() => {
     sortLane(s.lane);
     s.wx = B.px + s.ox;
     B.dying.push(s);
-    B.fx.push({ kind: 'poof', x: s.wx, y: s.y - 10, t: 0, dur: 0.55, s: 0.7 });
+    B.fx.push({ kind: 'poof', x: s.wx, y: s.y - 10 * U, t: 0, dur: 0.55, s: 0.7 });
     sfx('CombatGrave1', 0.3, rnd(0.95, 1.15));
     Game.onSoldierDied(s);
     if (aliveCount() === 0) {
@@ -198,7 +205,7 @@ const Battle = (() => {
       const T = ENEMY_TYPES[type];
       let lane = lanes[li % LANES];
       if (T.boss) lane = Math.floor(LANES / 2) - 1 + Math.floor(Math.random() * 2);
-      const x = x0 + col * 34 + rnd(0, 14) + (T.range ? 40 : 0) + (T.boss ? 30 : 0);
+      const x = x0 + (col * 34 + rnd(0, 14)) * U + (T.range ? 40 : 0) + (T.boss ? 20 : 0);
       const e = makeEnemy(type, x, lane);
       B.enemies.push(e);
       if (T.boss) B.boss = e;
@@ -221,7 +228,7 @@ const Battle = (() => {
     B.dmgStat[opt.skill ? 1 : 0] += Math.min(dmg, e.hp);
     e.hp -= dmg;
     e.hitT = 0.12;
-    addText(e.x + rnd(-6, 6), e.y - 46 * e.scale * depth(e.y), fmt(dmg), opt.crit ? 'crit' : opt.skill ? 'skill' : 'n');
+    addText(e.x + rnd(-4, 4), e.y - 46 * U * e.scale * depth(e.y), fmt(dmg), opt.crit ? 'crit' : opt.skill ? 'skill' : 'n');
     if (opt.kb && !e.T.boss) e.kb = Math.max(e.kb, opt.kb);
     if (opt.stun) e.stunT = Math.max(e.stunT, opt.stun * (e.T.boss ? 0.3 : 1));
     if (opt.slow) e.slowT = Math.max(e.slowT, opt.slow);
@@ -231,9 +238,9 @@ const Battle = (() => {
   function killEnemy(e) {
     e.dead = true; e.deathT = 0; e.anim = null;
     if (B.boss === e) B.boss = null;
-    B.fx.push({ kind: 'poof', x: e.x, y: e.y - 12, t: 0, dur: 0.6, s: e.scale });
-    const n = e.T.boss ? 8 : 1 + (Math.random() < 0.5 ? 1 : 0);
-    const sx = e.x - B.camX, sy = e.y - 20;
+    B.fx.push({ kind: 'poof', x: e.x, y: e.y - 12 * U, t: 0, dur: 0.6, s: e.scale });
+    const n = e.T.boss ? 8 : Math.random() < 0.75 ? 1 : 0;
+    const sx = e.x - B.camX, sy = e.y - 20 * U;
     for (let i = 0; i < n; i++) B.coins.push({ x: sx, y: sy, vx: rnd(-50, 50), vy: rnd(-140, -70), t: 0 });
     if (e.T.boss) { B.shake = 7; sfx('CombatExplosion1', 0.6); }
     Game.onEnemyKilled(e);
@@ -259,7 +266,7 @@ const Battle = (() => {
         const dy = Math.abs(e.y - s.y);
         if (dy > LANE_SP * 1.1) continue;
         const dx = e.x - sx;
-        if (dx < -12 || dx > reach + 16 * e.scale) continue;
+        if (dx < -12 * U || dx > reach + 16 * U * e.scale) continue;
         const score = dx + dy * 2;
         if (score < bd) { bd = score; best = e; }
       }
@@ -283,10 +290,10 @@ const Battle = (() => {
     const d = depth(s.y);
     if (C.role >= 2) {
       const sp = C.proj === 'bullet' ? 700 : C.proj === 'orb' ? 280 : 400;
-      const x0 = sx + 16 * d, y0 = s.y - 26 * d;
+      const x0 = sx + 16 * U * d, y0 = s.y - 26 * U * d;
       const dist = Math.hypot(e.x - x0, e.y - y0);
-      B.projs.push({ kind: C.proj, from: 's', x0, y0, x: x0, y: y0, tx: e.x, ty: e.y - 20, target: e, t: 0,
-        dur: Math.max(0.08, dist / sp), arc: C.proj === 'arrow' ? 26 : 0, base: soldierAtk(s), splash: C.splash || 0, grade: s.grade });
+      B.projs.push({ kind: C.proj, from: 's', x0, y0, x: x0, y: y0, tx: e.x, ty: e.y - 20 * U, target: e, t: 0,
+        dur: Math.max(0.08, dist / sp), arc: C.proj === 'arrow' ? 22 : 0, base: soldierAtk(s), splash: C.splash || 0, grade: s.grade });
       if (C.proj === 'bullet') {
         sfx(Math.random() < 0.5 ? 'CombatGun1' : 'CombatGun2', 0.18);
         B.fx.push({ kind: 'muzzle', x: x0 + 14 * d, y: y0 + 2, t: 0, dur: 0.1 });
@@ -302,7 +309,7 @@ const Battle = (() => {
         if (Math.abs(o.x - e.x) < C.splash && Math.abs(o.y - e.y) < LANE_SP * 1.4) hurtEnemy(o, dmg * 0.5, { kb: 5 });
       }
     }
-    B.fx.push({ kind: 'spark', x: e.x - 8, y: e.y - 24 * depth(e.y), t: 0, dur: 0.18, crit });
+    B.fx.push({ kind: 'spark', x: e.x - 8 * U, y: e.y - 24 * U * depth(e.y), t: 0, dur: 0.18, crit });
     sfx('CombatHit' + (1 + Math.floor(Math.random() * 4)), crit ? 0.35 : 0.22, rnd(0.9, 1.1));
   }
 
@@ -314,15 +321,15 @@ const Battle = (() => {
       if (!s || s.C.role > 1) continue;
       const sx = B.px + s.ox;
       for (const e of B.enemies) {
-        if (e.dead || Math.abs(e.y - s.y) > LANE_SP * 0.8 || e.x - sx > CONTACT * e.scale + 30) continue;
+        if (e.dead || Math.abs(e.y - s.y) > LANE_SP * 0.8 || e.x - sx > CONTACT * e.scale + 15) continue;
         hurtEnemy(e, soldierAtk(s) * 0.8, { kb: 16 });
         hit = true;
       }
     }
     if (!hit) return;
     B.shake = Math.max(B.shake, 4);
-    addText(B.px - 20, laneY0 - 22, '돌격!', 'skillName', '#ffe08a');
-    for (let l = 0; l < LANES; l += 2) B.fx.push({ kind: 'spark', x: B.px + 22, y: laneY(l) - 20, t: 0, dur: 0.22, crit: true });
+    addText(B.px - 20, laneY0 - 18, '돌격!', 'skillName', '#ffe08a');
+    for (let l = 0; l < LANES; l += 2) B.fx.push({ kind: 'spark', x: B.px + 11, y: laneY(l) - 10, t: 0, dur: 0.22, crit: true });
     sfx('CombatHit4', 0.5, 0.75);
     sfx('CombatSwing3', 0.4, 0.8);
   }
@@ -335,11 +342,11 @@ const Battle = (() => {
       if (!pool.length) return;
       // Volleys fall anywhere in the formation, so the back ranks bleed too.
       const s = pool[Math.floor(Math.random() * pool.length)];
-      const x0 = e.x - 14, y0 = e.y - 26 * e.scale;
-      const tx = B.px + s.ox, ty = s.y - 20;
+      const x0 = e.x - 14 * U, y0 = e.y - 26 * U * e.scale;
+      const tx = B.px + s.ox, ty = s.y - 20 * U;
       const sp = T.proj === 'orb' ? 240 : 360;
       B.projs.push({ kind: T.proj === 'orb' ? 'eorb' : 'earrow', from: 'e', x0, y0, x: x0, y: y0, tx, ty, target: s, t: 0,
-        dur: Math.max(0.1, Math.hypot(tx - x0, ty - y0) / sp), arc: T.proj === 'arrow' ? 22 : 0, base: e.atk, splash: T.splash || 0 });
+        dur: Math.max(0.1, Math.hypot(tx - x0, ty - y0) / sp), arc: T.proj === 'arrow' ? 18 : 0, base: e.atk, splash: T.splash || 0 });
       if (T.proj === 'arrow') sfx('CombatBow2', 0.1, 0.85);
       return;
     }
@@ -348,7 +355,7 @@ const Battle = (() => {
     if (!s) return;
     if (e.x - (B.px + s.ox) > CONTACT * e.scale + T.reach) return;
     hurtSoldier(s, e.atk * rnd(0.9, 1.1));
-    B.fx.push({ kind: 'spark', x: B.px + s.ox + 10, y: s.y - 22, t: 0, dur: 0.15, enemy: true });
+    B.fx.push({ kind: 'spark', x: B.px + s.ox + 10 * U, y: s.y - 22 * U, t: 0, dur: 0.15, enemy: true });
     if (T.cleave) {
       for (const dl of [-1, 1]) {
         const o = B.lanes[e.lane + dl] && B.lanes[e.lane + dl][0];
@@ -372,7 +379,7 @@ const Battle = (() => {
     for (const e of B.enemies) if (!e.dead) nearest = Math.min(nearest, e.x - B.px);
     B.engaged = nearest < 120;
     const wasMarching = B.marching;
-    B.marching = B.state === 'run' && aliveCount() > 0 && nearest > CONTACT + 18;
+    B.marching = B.state === 'run' && aliveCount() > 0 && nearest > CONTACT + 9;
     // Close the last stretch at a run, then slam into the orc line.
     B.charging = B.marching && nearest < 170;
     if (B.marching) {
@@ -383,14 +390,15 @@ const Battle = (() => {
         B.dustT = B.charging ? 0.05 : 0.13;
         const l = Math.floor(Math.random() * LANES);
         const back = slotX(l, RANKS - 1);
-        B.fx.push({ kind: 'dust', x: B.px + back - 10 + rnd(-6, 6), y: laneY(l) - 2, t: 0, dur: 0.45 });
+        B.fx.push({ kind: 'dust', x: B.px + back - 5 + rnd(-3, 3), y: laneY(l) - 1, t: 0, dur: 0.45 });
       }
     } else {
-      if (wasMarching && B.marchT > 0.6 && nearest < CONTACT + 40) chargeImpact();
+      if (wasMarching && B.marchT > 0.6 && nearest < CONTACT + 20) chargeImpact();
       B.marchT = 0;
     }
     B.camX = B.px - FRONT_X;
 
+    updateHero(dt);
     updateSoldiers(dt);
     updateEnemies(dt);
     updateProjs(dt);
@@ -401,6 +409,27 @@ const Battle = (() => {
     updateCoins(dt);
     if (B.banner) { B.banner.t += dt; if (B.banner.t > B.banner.dur) B.banner = null; }
     if (B.flash) { B.flash.t += dt; if (B.flash.t > B.flash.dur) B.flash = null; }
+  }
+
+  // The chariot trails the formation and lags a little when the phalanx breaks into a charge.
+  function updateHero(dt) {
+    const h = B.hero;
+    const want = B.px - HERO_BACK;
+    if (h.x == null || Math.abs(want - h.x) > 400) h.x = want;
+    const prev = h.x;
+    h.x += (want - h.x) * Math.min(1, dt * 4);
+    h.moving = h.x - prev > 2 * dt;
+    if (h.castT > 0) h.castT -= dt;
+    h.dustT -= dt;
+    if (h.moving && h.dustT <= 0) {
+      h.dustT = 0.12;
+      B.fx.push({ kind: 'dust', x: h.x - 0.4 * HERO_UNIT + rnd(-2, 2), y: midY() + 1, t: 0, dur: 0.5 });
+    }
+  }
+
+  // Where spells leave from: the tip of the commander's raised sword.
+  function heroHand() {
+    return { x: B.hero.x + 6, y: midY() - (HERO.riderY + 2.9) * HERO_UNIT };
   }
 
   function updateSoldiers(dt) {
@@ -444,7 +473,7 @@ const Battle = (() => {
       const T = e.T;
       if (e.hitT > 0) e.hitT -= dt;
       if (e.slowT > 0) e.slowT -= dt;
-      if (e.kb > 0) { e.x += e.kb * 9 * dt; e.kb = Math.max(0, e.kb - dt * 60); }
+      if (e.kb > 0) { e.x += e.kb * 9 * U * dt; e.kb = Math.max(0, e.kb - dt * 60); }
       e.moving = false;
       if (e.stunT > 0) { e.stunT -= dt; e.anim = null; continue; }
       if (e.anim) {
@@ -479,11 +508,11 @@ const Battle = (() => {
         if (o === e || o.dead || o.lane !== e.lane || o.T.range || o.x >= e.x) continue;
         if (o.x > ahead) ahead = o.x;
       }
-      const minX = Math.max(stopX, ahead + 21 * Math.max(e.scale, 1));
+      const minX = Math.max(stopX, ahead + 21 * U * Math.max(e.scale, 1));
       if (e.x > minX + 0.5) { e.x = Math.max(minX, e.x - spd * dt); e.moving = true; }
       // An orc that slipped past while switching lanes steps back out to the front.
       else if (blocker && e.x < stopX - 1) { e.x = Math.min(stopX, e.x + spd * dt); e.moving = true; }
-      if (blocker && e.x - stopX < 6 && e.cd <= 0 && !e.anim) {
+      if (blocker && e.x - stopX < 3 && e.cd <= 0 && !e.anim) {
         e.anim = { kind: 'chop', t: 0, dur: T.boss ? 0.7 : 0.45, hit: false };
         e.cd = T.aspd;
       }
@@ -495,8 +524,8 @@ const Battle = (() => {
     for (const p of B.projs) {
       p.t += dt;
       if (p.target && !p.target.dead && !p.fixed) {
-        if (p.from === 'e') { p.tx = B.px + p.target.ox; p.ty = p.target.y - 20; }
-        else { p.tx = p.target.x; p.ty = p.target.y - (p.from === 's' ? 20 : 14) * p.target.scale; }
+        if (p.from === 'e') { p.tx = B.px + p.target.ox; p.ty = p.target.y - 20 * U; }
+        else { p.tx = p.target.x; p.ty = p.target.y - (p.from === 's' ? 20 : 14) * U * p.target.scale; }
       }
       const q = Math.min(1, p.t / p.dur);
       const nx = lerp(p.x0, p.tx, q);
@@ -513,14 +542,14 @@ const Battle = (() => {
     if (p.from === 's') {
       let e = p.target && !p.target.dead ? p.target : null;
       if (!e) {
-        for (const o of B.enemies) if (!o.dead && Math.abs(o.x - p.tx) < 16 && Math.abs(o.y - 20 - p.ty) < 18) { e = o; break; }
+        for (const o of B.enemies) if (!o.dead && Math.abs(o.x - p.tx) < 8 && Math.abs(o.y - 10 - p.ty) < 9) { e = o; break; }
       }
       if (p.splash) {
         B.fx.push({ kind: 'burst', x: p.tx, y: p.ty, t: 0, dur: 0.3, color: '#b98bff' });
         const { dmg, crit } = rollDmg(p.base);
         for (const o of B.enemies) {
           if (o.dead) continue;
-          if (Math.abs(o.x - p.tx) < p.splash && Math.abs(o.y - 20 - p.ty) < p.splash * 0.8) hurtEnemy(o, o === e ? dmg : dmg * 0.6, { crit: crit && o === e });
+          if (Math.abs(o.x - p.tx) < p.splash && Math.abs(o.y - 10 - p.ty) < p.splash * 0.8) hurtEnemy(o, o === e ? dmg : dmg * 0.6, { crit: crit && o === e });
         }
         return;
       }
@@ -534,7 +563,7 @@ const Battle = (() => {
     if (p.splash) {
       B.fx.push({ kind: 'burst', x: p.tx, y: p.ty, t: 0, dur: 0.3, color: '#7cff6a' });
       for (const lane of B.lanes) for (const s of [...lane]) {
-        if (Math.abs(B.px + s.ox - p.tx) < p.splash && Math.abs(s.y - 20 - p.ty) < p.splash) hurtSoldier(s, p.base * (s === p.target ? 1 : 0.5));
+        if (Math.abs(B.px + s.ox - p.tx) < p.splash && Math.abs(s.y - 10 - p.ty) < p.splash) hurtSoldier(s, p.base * (s === p.target ? 1 : 0.5));
       }
       return;
     }
@@ -545,7 +574,7 @@ const Battle = (() => {
     if (B.state === 'wipe') {
       B.stateT -= dt;
       if (B.stateT <= 0) {
-        for (const e of B.enemies) if (!e.dead) B.fx.push({ kind: 'poof', x: e.x, y: e.y - 12, t: 0, dur: 0.6, s: e.scale });
+        for (const e of B.enemies) if (!e.dead) B.fx.push({ kind: 'poof', x: e.x, y: e.y - 12 * U, t: 0, dur: 0.6, s: e.scale });
         B.enemies = []; B.projs = []; B.boss = null;
         B.wave = 0; B.waveActive = false; B.pending = true; B.pendT = 1.6;
         B.state = 'run';
@@ -573,11 +602,12 @@ const Battle = (() => {
   }
 
   // ---------- skills ----------
-  // Skills grow with the army: a better-graded phalanx casts stronger spells.
+  // The commander casts every skill; spells grow with the army's average grade.
+  // Area spells meet twice as many (half-strength) orcs as before, hence the lower base.
   function heroAtk() {
     let n = 0, m = 0;
     for (const lane of B.lanes) for (const s of lane) { m += GRADES[s.grade].mult; n++; }
-    return 10 * Game.mods.atk * Game.mods.skill * (n ? m / n : 1);
+    return 6 * Game.mods.atk * Game.mods.skill * (n ? m / n : 1);
   }
 
   function onScreenEnemies() {
@@ -592,14 +622,14 @@ const Battle = (() => {
       for (const b of vis) if (Math.abs(b.x - a.x) < r && Math.abs(b.y - a.y) < r * 0.8) n++;
       if (n > bn) { bn = n; best = a; }
     }
-    return best ? { x: best.x, y: best.y - 14, e: best } : null;
+    return best ? { x: best.x, y: best.y - 7, e: best } : null;
   }
 
   function aoe(x, y, r, dmg, opt = {}) {
     let hit = 0;
     for (const e of B.enemies) {
       if (e.dead) continue;
-      const dx = e.x - x, dy = (e.y - 14 - y) * 1.3;
+      const dx = e.x - x, dy = (e.y - 7 - y) * 1.3;
       if (dx * dx + dy * dy <= r * r) { hurtEnemy(e, dmg * rnd(0.92, 1.08), { skill: true, ...opt }); hit++; }
     }
     return hit;
@@ -608,7 +638,7 @@ const Battle = (() => {
   function armyCenter() {
     let n = 0, x = 0;
     for (const lane of B.lanes) for (const s of lane) { x += B.px + s.ox; n++; }
-    return { x: n ? x / n : B.px - 60, y: laneY0 + 3.5 * LANE_SP };
+    return { x: n ? x / n : B.px - 60, y: midY() };
   }
 
   function skillProj(icon, from, to, dur, rot, onHit, arc = 0, size = 30) {
@@ -620,8 +650,7 @@ const Battle = (() => {
     'fireball'(v) {
       const t = clusterTarget();
       if (!t) return false;
-      const c = armyCenter();
-      skillProj('assets/skills/fireball.png', { x: c.x, y: laneY0 - 70 }, t, 0.5, Math.PI * 0.75, (p) => {
+      skillProj('assets/skills/fireball.png', heroHand(), t, 0.6, Math.PI * 0.75, (p) => {
         aoe(p.tx, p.ty, 58, heroAtk() * v / 100);
         boom(p.tx, p.ty, 1.3); B.shake = Math.max(B.shake, 4);
         sfx('CombatExplosion1', 0.5);
@@ -633,7 +662,7 @@ const Battle = (() => {
       const t = clusterTarget(70);
       if (!t) return false;
       for (let i = 0; i < 16; i++) {
-        const tx = t.x + rnd(-55, 55), ty = laneY(Math.floor(rnd(0, LANES))) - 14;
+        const tx = t.x + rnd(-55, 55), ty = laneY(Math.floor(rnd(0, LANES))) - 7;
         const from = { x: tx - 90, y: -20 };
         setTimeoutFx(i * 0.05, () => {
           skillProj('assets/vfx/arrow.png', from, { x: tx, y: ty }, 0.45, 0, (p) => {
@@ -651,15 +680,16 @@ const Battle = (() => {
       const counts = new Array(LANES).fill(0);
       for (const e of vis) counts[e.lane]++;
       const lane = counts.indexOf(Math.max(...counts));
-      const y = laneY(lane) - 18;
+      const y = laneY(lane) - 9;
       const hitSet = new Set();
-      B.fx.push({ kind: 'lance', x: B.px + 10, y, t: 0, dur: 1.1, speed: 420, update(f) {
+      // Launched from the chariot, it flies over the phalanx and pierces the orc line.
+      B.fx.push({ kind: 'lance', x: B.hero.x + 10, y, t: 0, dur: 1.5, speed: 420, update(f) {
         for (const e of B.enemies) {
           if (e.dead || hitSet.has(e)) continue;
-          if (Math.abs(e.y - 18 - y) < 26 && f.x >= e.x - 10) {
+          if (Math.abs(e.y - 9 - y) < 20 && f.x >= e.x - 5) {
             hitSet.add(e);
             hurtEnemy(e, heroAtk() * v / 100, { skill: true, slow: 3 });
-            B.fx.push({ kind: 'frost', x: e.x, y: e.y - 18, t: 0, dur: 0.4 });
+            B.fx.push({ kind: 'frost', x: e.x, y: e.y - 9, t: 0, dur: 0.4 });
           }
         }
       } });
@@ -669,12 +699,12 @@ const Battle = (() => {
     'lightning'(v) {
       const vis = onScreenEnemies();
       if (!vis.length) return false;
-      const targets = vis.sort(() => Math.random() - 0.5).slice(0, 5);
+      const targets = vis.sort(() => Math.random() - 0.5).slice(0, 8);
       const cx = targets.reduce((a, e) => a + e.x, 0) / targets.length;
       B.fx.push({ kind: 'cloud', x: cx, y: Math.max(16, groundTop - 90), t: 0, dur: 1.3 });
       targets.forEach((e, i) => setTimeoutFx(0.15 + i * 0.12, () => {
         if (e.dead) return;
-        B.fx.push({ kind: 'bolt', x: e.x, y: e.y - 16, top: Math.max(16, groundTop - 80), t: 0, dur: 0.28, seed: Math.random() * 1000 });
+        B.fx.push({ kind: 'bolt', x: e.x, y: e.y - 8, top: Math.max(16, groundTop - 80), t: 0, dur: 0.28, seed: Math.random() * 1000 });
         hurtEnemy(e, heroAtk() * v / 100, { skill: true, stun: 0.8 });
         sfx('CombatLaser1', 0.3, 1.3);
       }));
@@ -683,12 +713,11 @@ const Battle = (() => {
     'poison-bomb'(v) {
       const t = clusterTarget(60);
       if (!t) return false;
-      const c = armyCenter();
-      skillProj('assets/skills/poison-bomb.png', { x: c.x, y: laneY0 - 40 }, { x: t.x, y: t.y }, 0.6, 0, (p) => {
+      skillProj('assets/skills/poison-bomb.png', heroHand(), { x: t.x, y: t.y }, 0.7, 0, (p) => {
         sfx('CombatExplosion1', 0.3, 1.4);
-        B.fx.push({ kind: 'field', field: 'poison', x: p.tx, y: p.ty + 14, r: 62, t: 0, dur: 5, tick: 0, update(f, dt) {
+        B.fx.push({ kind: 'field', field: 'poison', x: p.tx, y: p.ty + 7, r: 62, t: 0, dur: 5, tick: 0, update(f, dt) {
           f.tick -= dt;
-          if (f.tick <= 0) { f.tick = 0.5; aoe(f.x, f.y - 14, f.r, heroAtk() * v / 100); }
+          if (f.tick <= 0) { f.tick = 0.5; aoe(f.x, f.y - 7, f.r, heroAtk() * v / 100); }
         } });
       }, 70, 30);
       return true;
@@ -713,9 +742,9 @@ const Battle = (() => {
     'hellfire'(v) {
       const t = clusterTarget(70);
       if (!t) return false;
-      B.fx.push({ kind: 'field', field: 'hell', x: t.x, y: t.y + 14, r: 72, t: 0, dur: 5, tick: 0, update(f, dt) {
+      B.fx.push({ kind: 'field', field: 'hell', x: t.x, y: t.y + 7, r: 72, t: 0, dur: 5, tick: 0, update(f, dt) {
         f.tick -= dt;
-        if (f.tick <= 0) { f.tick = 0.5; aoe(f.x, f.y - 14, f.r, heroAtk() * v / 100); }
+        if (f.tick <= 0) { f.tick = 0.5; aoe(f.x, f.y - 7, f.r, heroAtk() * v / 100); }
       } });
       sfx('CombatFlame1', 0.5, 0.8);
       return true;
@@ -723,9 +752,9 @@ const Battle = (() => {
     'fire-wave'(v) {
       if (!onScreenEnemies().length) return false;
       const hitSet = new Set();
-      B.fx.push({ kind: 'wave', x: B.px + 6, y: laneY0 + 3.5 * LANE_SP, t: 0, dur: 1.6, speed: 260, update(f) {
+      B.fx.push({ kind: 'wave', x: B.hero.x + 20, y: midY(), t: 0, dur: 2.2, speed: 260, update(f) {
         for (const e of B.enemies) {
-          if (e.dead || hitSet.has(e) || f.x < e.x - 8) continue;
+          if (e.dead || hitSet.has(e) || f.x < e.x - 4) continue;
           hitSet.add(e);
           hurtEnemy(e, heroAtk() * v / 100, { skill: true, kb: 30 });
         }
@@ -742,7 +771,7 @@ const Battle = (() => {
       for (const lane of B.lanes) for (const s of lane) {
         const h = s.maxHp * v / 100;
         s.hp = Math.min(s.maxHp, s.hp + h);
-        B.fx.push({ kind: 'heal', x: B.px + s.ox, y: s.y - 20, t: -Math.random() * 0.4, dur: 0.9 });
+        B.fx.push({ kind: 'heal', x: B.px + s.ox, y: s.y - 10, t: -Math.random() * 0.4, dur: 0.9 });
       }
       sfx('UiReward', 0.45, 1.2);
       return true;
@@ -751,7 +780,7 @@ const Battle = (() => {
       const vis = onScreenEnemies();
       if (!vis.length) return false;
       const cx = vis.reduce((a, e) => a + e.x, 0) / vis.length;
-      B.fx.push({ kind: 'nova', x: cx, y: laneY0 + 2 * LANE_SP, t: 0, dur: 0.9 });
+      B.fx.push({ kind: 'nova', x: cx, y: midY(), t: 0, dur: 0.9 });
       setTimeoutFx(0.35, () => {
         for (const e of onScreenEnemies()) hurtEnemy(e, heroAtk() * v / 100 * rnd(0.92, 1.08), { skill: true });
         B.flash = { color: 'rgba(255,255,230,', t: 0, dur: 0.4 };
@@ -765,8 +794,8 @@ const Battle = (() => {
       if (!t) return false;
       skillProj('assets/skills/meteor.png', { x: t.x + 160, y: -60 }, { x: t.x, y: t.y }, 0.75, Math.PI, (p) => {
         aoe(p.tx, p.ty, 95, heroAtk() * v / 100, { stun: 1.2, kb: 14 });
-        B.fx.push({ kind: 'crater', x: p.tx, y: p.ty + 18, t: 0, dur: 3.5 });
-        B.fx.push({ kind: 'ring', x: p.tx, y: p.ty + 14, t: 0, dur: 0.8 });
+        B.fx.push({ kind: 'crater', x: p.tx, y: p.ty + 9, t: 0, dur: 3.5 });
+        B.fx.push({ kind: 'ring', x: p.tx, y: p.ty + 7, t: 0, dur: 0.8 });
         boom(p.tx, p.ty, 2.4);
         B.flash = { color: 'rgba(255,200,120,', t: 0, dur: 0.45 };
         B.shake = Math.max(B.shake, 11);
@@ -790,8 +819,10 @@ const Battle = (() => {
     const lv = (Game.S.skills[id] && Game.S.skills[id].lv) || 1;
     if (!SKILL_FN[id](F.skillValue(sk, lv))) return false;
     B.cd[id] = sk.cd;
-    const c = armyCenter();
-    addText(c.x, laneY0 - 26, sk.name + '!', 'skillName', GRADES[sk.grade].color);
+    B.hero.castT = 0.55;
+    const hand = heroHand();
+    addText(B.hero.x, hand.y - 12, sk.name + '!', 'skillName', GRADES[sk.grade].color);
+    B.fx.push({ kind: 'spark', x: hand.x, y: hand.y, t: 0, dur: 0.35, crit: true });
     return true;
   }
 
@@ -960,6 +991,31 @@ const Battle = (() => {
     return p;
   }
 
+  // The commander: chariot, rider, then the chariot's front panel over the rider's legs
+  // (layering and offsets as forge-clone-2's UnitActor mounts them).
+  const heroPose = { wpn: 0, arm: 0, bob: 0, tilt: 0, lunge: 0, thrust: 0 };
+  function drawHero() {
+    const h = B.hero;
+    const im = IMG(HERO.mount);
+    if (h.x == null || !im) return;
+    const x = h.x - B.camX, ground = midY();
+    const W = HERO.width * HERO_UNIT, H = W * im.naturalHeight / im.naturalWidth;
+    const cx = x + HERO.offsetX * HERO_UNIT;
+    const bounce = h.moving ? Math.abs(Math.sin(B.time * 13)) * 1.3 : 0;
+    g.fillStyle = 'rgba(40,25,10,0.28)';
+    g.beginPath(); g.ellipse(cx, ground, W * 0.46, 3.5, 0, 0, Math.PI * 2); g.fill();
+    const left = cx - W / 2, top = ground - (1 - HERO.pivotY) * H - bounce;
+    g.drawImage(im, left, top, W, H);
+    // Sword held forward; raised to the sky while casting.
+    const c = h.castT > 0 ? Math.sin((1 - h.castT / 0.55) * Math.PI) : 0;
+    heroPose.arm = lerp(-0.35, -2.5, c);
+    heroPose.wpn = lerp(-0.7, 0.35, c);
+    heroPose.tilt = h.moving ? Math.sin(B.time * 13) * 0.03 : 0;
+    Engine.drawLook(g, Engine.look(HERO.look), x, ground - HERO.riderY * HERO_UNIT - bounce, HERO_S / Engine.PS, false, heroPose);
+    const front = IMG(HERO.front);
+    if (front) g.drawImage(front, left, top, W, H);
+  }
+
   const drawList = [];
   function drawUnits() {
     drawList.length = 0;
@@ -980,13 +1036,14 @@ const Battle = (() => {
         const pulse = u.grade >= 4 ? 0.15 * Math.sin(B.time * 4 + u.phase) : 0;
         g.fillStyle = col;
         g.globalAlpha = 0.35 + pulse;
-        g.beginPath(); g.ellipse(x, u.y, 16 * sc, 5.5 * sc, 0, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.ellipse(x, u.y, 16 * U * sc, 5.5 * U * sc, 0, 0, Math.PI * 2); g.fill();
         g.globalAlpha = 1;
       }
       g.fillStyle = 'rgba(40,25,10,0.28)';
-      g.beginPath(); g.ellipse(x, u.y, 13 * sc, 4 * sc, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(x, u.y, 13 * U * sc, 4 * U * sc, 0, 0, Math.PI * 2); g.fill();
     }
     g.globalAlpha = 1;
+    drawHero();
 
     for (const it of drawList) {
       if (it.s) {
@@ -998,13 +1055,13 @@ const Battle = (() => {
         if (it.dying) {
           const q = Math.min(1, s.deathT / 0.3);
           pose = { tilt: -1.35 * q, bob: 0, arm: 0.4, wpn: 0.6 };
-          x -= 8 * q;
+          x -= 8 * U * q;
           g.globalAlpha = Math.max(0, 1 - Math.max(0, s.deathT - 0.3) / 0.6);
         } else {
           pose = poseSoldier(s);
           if (s.spawnT > 0) {
             const q = 1 - s.spawnT / 0.5;
-            y -= (1 - q * q) * 110;
+            y -= (1 - q * q) * 70;
             g.globalAlpha = Math.min(1, q * 2);
           }
         }
@@ -1013,7 +1070,7 @@ const Battle = (() => {
         if (!it.dying && s.shield > 0) {
           g.globalAlpha = 0.28 + 0.08 * Math.sin(B.time * 6 + s.phase);
           g.fillStyle = '#9fe6ff';
-          g.beginPath(); g.ellipse(x, y - 22 * d, 20 * d, 28 * d, 0, 0, Math.PI * 2); g.fill();
+          g.beginPath(); g.ellipse(x, y - 22 * U * d, 20 * U * d, 28 * U * d, 0, 0, Math.PI * 2); g.fill();
           g.globalAlpha = 1;
         }
       } else {
@@ -1027,17 +1084,17 @@ const Battle = (() => {
           pose = { tilt: -1.3 * q, bob: 0, arm: 0.3, wpn: 0.4 };
           g.globalAlpha = Math.max(0, 1 - Math.max(0, e.deathT - 0.25) / 0.55);
         } else pose = poseEnemy(e);
-        Engine.drawLook(g, e.look, x + (e.dead ? 8 * Math.min(1, e.deathT / 0.3) : 0), e.y, CHAR_S / Engine.PS * d, true, pose, e.hitT > 0.07 && !e.T.boss);
+        Engine.drawLook(g, e.look, x + (e.dead ? 8 * U * Math.min(1, e.deathT / 0.3) : 0), e.y, CHAR_S / Engine.PS * d, true, pose, e.hitT > 0.07 && !e.T.boss);
         g.globalAlpha = 1;
         if (e.slowT > 0 && !e.dead) {
           g.globalAlpha = 0.3; g.fillStyle = '#8fd8ff';
-          g.beginPath(); g.ellipse(x, e.y - 20 * d, 16 * d, 24 * d, 0, 0, Math.PI * 2); g.fill();
+          g.beginPath(); g.ellipse(x, e.y - 20 * U * d, 16 * U * d, 24 * U * d, 0, 0, Math.PI * 2); g.fill();
           g.globalAlpha = 1;
         }
         if (e.stunT > 0 && !e.dead) {
           for (let i = 0; i < 3; i++) {
             const a = B.time * 5 + i * 2.1;
-            drawIcon('assets/vfx/sparkle.png', x + Math.cos(a) * 10 * d, e.y - 52 * d + Math.sin(a) * 3, 8);
+            drawIcon('assets/vfx/sparkle.png', x + Math.cos(a) * 10 * U * d, e.y - 52 * U * d + Math.sin(a) * 2, 6);
           }
         }
       }
@@ -1050,12 +1107,12 @@ const Battle = (() => {
       if (!u.look || u.dead || u.hp >= u.maxHp - 0.01 || (it.e && it.e.T.boss)) continue;
       const d = depth(u.y) * (u.scale || 1);
       const x = (it.s ? B.px + u.ox : u.x) - B.camX;
-      const y = u.y + u.look.A.y * (CHAR_S / Engine.PS) * d - 3;
-      const w = 18 * d;
+      const y = u.y + u.look.A.y * (CHAR_S / Engine.PS) * d - 2;
+      const w = 11 * d;
       g.fillStyle = 'rgba(20,10,10,0.75)';
-      g.fillRect(x - w / 2 - 1, y - 1, w + 2, 4);
+      g.fillRect(x - w / 2 - 0.5, y - 0.5, w + 1, 2.5);
       g.fillStyle = it.s ? '#5ee05a' : '#ff5148';
-      g.fillRect(x - w / 2, y, w * clamp(u.hp / u.maxHp, 0, 1), 2);
+      g.fillRect(x - w / 2, y, w * clamp(u.hp / u.maxHp, 0, 1), 1.5);
     }
   }
 
@@ -1132,7 +1189,7 @@ const Battle = (() => {
       } else if (f.kind === 'beam') {
         const a = Math.sin(Math.min(1, q) * Math.PI);
         g.globalCompositeOperation = 'lighter';
-        drawIcon('assets/vfx/ring.png', x, f.y, 34 + q * 24, 0, a);
+        drawIcon('assets/vfx/ring.png', x, f.y, (34 + q * 24) * U, 0, a);
         g.globalCompositeOperation = 'source-over';
       }
     }
@@ -1145,30 +1202,30 @@ const Battle = (() => {
       switch (f.kind) {
         case 'beam': {
           const a = Math.sin(q * Math.PI);
-          const w = (f.grade >= 4 ? 30 : 20) * (1 - q * 0.5);
+          const w = (f.grade >= 4 ? 30 : 20) * U * (1 - q * 0.5);
           g.globalCompositeOperation = 'lighter';
-          const gr = g.createLinearGradient(0, f.y - 170, 0, f.y);
+          const gr = g.createLinearGradient(0, f.y - 120, 0, f.y);
           gr.addColorStop(0, 'rgba(255,255,255,0)');
           gr.addColorStop(1, f.color);
           g.globalAlpha = a * (0.3 + 0.12 * f.grade);
           g.fillStyle = gr;
-          g.fillRect(x - w / 2, f.y - 170, w, 170);
+          g.fillRect(x - w / 2, f.y - 120, w, 120);
           g.globalAlpha = a;
-          drawIcon('assets/vfx/sparkle.png', x, f.y - 30 - q * 30, 18 + 10 * a);
-          if (f.grade >= 4) drawIcon('assets/ui/rank-flare.png', x, f.y - 28, 70 * a, B.time * 2, a * 0.8);
+          drawIcon('assets/vfx/sparkle.png', x, f.y - (30 + q * 30) * U, (18 + 10 * a) * U);
+          if (f.grade >= 4) drawIcon('assets/ui/rank-flare.png', x, f.y - 28 * U, 70 * U * a, B.time * 2, a * 0.8);
           g.globalCompositeOperation = 'source-over';
           g.globalAlpha = 1;
           break;
         }
         case 'poof':
-          drawIcon('assets/vfx/dust.png', x, f.y - q * 10, (22 + q * 18) * f.s, 0, 1 - q);
+          drawIcon('assets/vfx/dust.png', x, f.y - q * 10 * U, (22 + q * 18) * U * f.s, 0, 1 - q);
           break;
         case 'dust':
-          drawIcon('assets/vfx/dust.png', x, f.y, 10 + q * 10, 0, 1 - q);
+          drawIcon('assets/vfx/dust.png', x, f.y, 7 + q * 7, 0, 1 - q);
           break;
         case 'spark':
           g.globalCompositeOperation = 'lighter';
-          drawIcon('assets/vfx/sparkle.png', x, f.y, (f.crit ? 26 : 16) * (0.6 + q), q * 2, 1 - q);
+          drawIcon('assets/vfx/sparkle.png', x, f.y, (f.crit ? 17 : 10) * (0.6 + q), q * 2, 1 - q);
           g.globalCompositeOperation = 'source-over';
           break;
         case 'muzzle':
@@ -1194,7 +1251,7 @@ const Battle = (() => {
           drawIcon('assets/vfx/ImpactSmokeRing.png', x, f.y, 80 + q * 120, 0, 1 - q);
           break;
         case 'frost':
-          drawIcon('assets/vfx/sparkle.png', x, f.y, 20 + q * 8, q, 1 - q);
+          drawIcon('assets/vfx/sparkle.png', x, f.y, 14 + q * 6, q, 1 - q);
           break;
         case 'lance': {
           const lx = f.x - B.camX;
@@ -1244,7 +1301,7 @@ const Battle = (() => {
           break;
         }
         case 'heal':
-          if (f.t >= 0) drawIcon('assets/icons/plus.png', x, f.y - q * 22, 10, 0, 1 - q);
+          if (f.t >= 0) drawIcon('assets/icons/plus.png', x, f.y - q * 16, 7, 0, 1 - q);
           break;
         case 'nova': {
           g.globalCompositeOperation = 'lighter';
@@ -1263,15 +1320,20 @@ const Battle = (() => {
     g.lineJoin = 'round';
     for (const t of B.texts) {
       const q = t.t / t.dur;
-      const x = t.x - B.camX;
-      let size = 10, color = '#ffffff', y = t.y - q * 22;
-      if (t.kind === 'crit') { size = 14; color = '#ffd33d'; }
-      else if (t.kind === 'skill') { size = 12; color = '#ffa13d'; }
+      let x = t.x - B.camX;
+      let size = 8, color = '#ffffff', y = t.y - q * 18;
+      if (t.kind === 'crit') { size = 11; color = '#ffd33d'; }
+      else if (t.kind === 'skill') { size = 11; color = '#ffa13d'; }
       else if (t.kind === 'skillName') { size = 15; color = t.color; y = t.y - q * 14; }
       const pop = q < 0.12 ? 1 + (0.12 - q) * 4 : 1;
       g.globalAlpha = q > 0.7 ? (1 - q) / 0.3 : 1;
       g.font = `${Math.round(size * pop)}px ${FONT}`;
-      g.lineWidth = 3;
+      g.lineWidth = size < 10 ? 2.5 : 3;
+      // Skill names start over the commander at the left edge: keep them on screen.
+      if (t.kind === 'skillName') {
+        const hw = g.measureText(t.text).width / 2 + 4;
+        x = clamp(x, hw, VW - hw);
+      }
       g.strokeStyle = 'rgba(30,15,10,0.9)';
       g.strokeText(t.text, x, y);
       g.fillStyle = color;
@@ -1281,7 +1343,7 @@ const Battle = (() => {
   }
 
   function drawCoins() {
-    for (const c of B.coins) drawIcon('assets/icons/coin.png', c.x, c.y, 9, 0);
+    for (const c of B.coins) drawIcon('assets/icons/coin.png', c.x, c.y, 8, 0);
   }
 
   function drawBanner() {
@@ -1351,14 +1413,18 @@ const Battle = (() => {
   }
 
   // Old saves may hold other classes or a bigger formation: keep the best soldiers that fit.
+  // A save from the 6-file phalanx turns every soldier into a 2x2 block of four quarter-strength men.
   function restoreArmy(snap) {
     for (let l = 0; l < LANES; l++) B.lanes[l] = [];
     const all = [];
+    const half = snap.length * 2 === LANES;
     snap.forEach((lane, l) => lane.forEach(([cls, grade, set, hp]) => {
       cls = CLASSES[cls] ? cls : LEGACY_CLASS[cls];
-      if (cls && GRADES[grade]) all.push({ cls, grade, set, hp, l });
+      if (!cls || !GRADES[grade]) return;
+      if (half) for (let k = 0; k < 4; k++) all.push({ cls, grade, set, hp, l: l * 2 + (k & 1) });
+      else all.push({ cls, grade, set, hp, l });
     }));
-    const sameShape = snap.length === LANES && snap.every((lane) => lane.length <= RANKS);
+    const sameShape = half || (snap.length === LANES && snap.every((lane) => lane.length <= RANKS));
     all.sort((a, b) => b.grade - a.grade);
     for (const s of all.slice(0, SLOTS)) {
       addSoldier(s.cls, s.grade, { set: s.set, hp: Math.max(0.2, s.hp), lane: sameShape ? s.l : undefined });
