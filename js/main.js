@@ -251,7 +251,7 @@ const Game = (() => {
     // Fall back one stage and farm it until the player challenges again.
     if (B.stage > 0) B.stage--;
     S.farm = true;
-    const n = Math.min(16, SLOTS - Battle.aliveCount());
+    const n = Math.min(Math.ceil(SLOTS / 3), SLOTS - Battle.aliveCount());
     for (let i = 0; i < n; i++) {
       const cls = CLASS_IDS[pickWeighted(CLASS_IDS.map((c) => CLASSES[c].weight))];
       Battle.addSoldier(cls, 0, { drop: true });
@@ -301,14 +301,11 @@ const Game = (() => {
     return p * (1 + mods.crit * (mods.critDmg - 1)) * mods.aspd;
   }
 
+  // One spearman and one archer per file; the empty middle rank is the first thing to recruit.
   function starterArmy() {
-    const plan = ['sword', 'sword', 'spear', 'spear', 'bow'];
     for (let l = 0; l < LANES; l++) {
-      const n = l === 0 || l === LANES - 1 ? 3 : 4;
-      for (let i = 0; i < n; i++) {
-        const cls = plan[i] || 'bow';
-        Battle.addSoldier(cls, (l + i) % 7 === 0 ? 1 : 0, { lane: l });
-      }
+      Battle.addSoldier('spear', l === 2 ? 1 : 0, { lane: l });
+      Battle.addSoldier('bow', 0, { lane: l });
     }
   }
 

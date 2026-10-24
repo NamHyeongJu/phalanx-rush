@@ -3,8 +3,8 @@
 
 const Battle = (() => {
   const VW = 400;            // virtual width; height follows the canvas aspect
-  const LANE_SP = 18.5;
-  const RANK_SP = 26;
+  const LANE_SP = 24;
+  const RANK_SP = 42;
   const FRONT_X = 212;       // screen x of the front rank
   const CHAR_S = 0.155;      // virtual px per native sprite px
   const MARCH = 36;
@@ -28,7 +28,7 @@ const Battle = (() => {
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const lerp = (a, b, t) => a + (b - a) * t;
   const laneY = (l) => laneY0 + l * LANE_SP;
-  const depth = (y) => 0.84 + 0.16 * clamp((y - laneY0) / (7 * LANE_SP), 0, 1);
+  const depth = (y) => 0.84 + 0.16 * clamp((y - laneY0) / ((LANES - 1) * LANE_SP), 0, 1);
   const sfx = (n, v, r) => Engine.Sfx.play(n, v, r);
   const IMG = (p) => Engine.img(p);
   const FONT = FONT_STACK;
@@ -59,26 +59,35 @@ const Battle = (() => {
   const soldierMaxHp = (s) => s.C.hp * GRADES[s.grade].mult * Game.mods.hp;
   const soldierAtk = (s) => s.C.atk * GRADES[s.grade].mult * Game.mods.atk;
 
+  // Spearmen fill a file from the front; archers always stand in the last ranks.
   function sortLane(l) {
     const lane = B.lanes[l];
     lane.sort((a, b) => (rolePri(a) - rolePri(b)) || (b.grade - a.grade) || (a.id - b.id));
-    lane.forEach((s, i) => { s.idx = i; });
+    const archers = lane.filter((s) => s.C.role >= 2).length;
+    let front = 0, back = RANKS - archers;
+    lane.forEach((s, i) => { s.idx = i; s.rank = s.C.role >= 2 ? back++ : front++; });
   }
 
   const slotX = (l, i) => -i * RANK_SP + ((l & 1) ? 5 : 0);
   const aliveCount = () => B.lanes.reduce((a, l) => a + l.length, 0);
 
   function addSoldier(cls, grade, opt = {}) {
-    let best = -1, bestN = RANKS;
+    const C = CLASSES[cls];
+    // Prefer the open file with the fewest soldiers of this kind (about one archer per file).
+    let best = -1, bestScore = Infinity;
     const order = [...Array(LANES).keys()].sort(() => Math.random() - 0.5);
-    for (const l of order) if (B.lanes[l].length < bestN) { bestN = B.lanes[l].length; best = l; }
+    for (const l of order) {
+      const lane = B.lanes[l];
+      if (lane.length >= RANKS) continue;
+      const score = lane.filter((o) => (o.C.role >= 2) === (C.role >= 2)).length * 4 + lane.length;
+      if (score < bestScore) { bestScore = score; best = l; }
+    }
     if (opt.lane != null && B.lanes[opt.lane].length < RANKS) best = opt.lane;
     if (best < 0) return null;
-    const C = CLASSES[cls];
     const sets = GRADE_SETS[grade];
     const set = opt.set && sets.includes(opt.set) ? opt.set : sets[Math.floor(Math.random() * sets.length)];
     const s = {
-      id: nextId++, cls, C, grade, set, lane: best, idx: 0, ox: 0, y: laneY(best),
+      id: nextId++, cls, C, grade, set, lane: best, idx: 0, rank: 0, ox: 0, y: laneY(best),
       look: Engine.look({ set, face: 0, weapon: C.weapons[grade], shield: !!C.shield }),
       hp: 1, maxHp: 1, cd: Math.random() * C.spd, anim: null, hitT: 0, dead: false, deathT: 0,
       spawnT: 0, shield: 0, shieldT: 0, phase: Math.random() * 6.28,
@@ -87,7 +96,7 @@ const Battle = (() => {
     s.hp = s.maxHp * (opt.hp != null ? opt.hp : 1);
     B.lanes[best].push(s);
     sortLane(best);
-    s.ox = slotX(best, s.idx);
+    s.ox = slotX(best, s.rank);
     if (opt.drop) {
       s.spawnT = 0.5;
       B.fx.push({ kind: 'beam', x: B.px + s.ox, y: s.y, t: 0, dur: 0.85, color: GRADES[grade].color, grade });
@@ -188,7 +197,7 @@ const Battle = (() => {
     list.forEach((type) => {
       const T = ENEMY_TYPES[type];
       let lane = lanes[li % LANES];
-      if (T.boss) lane = 3 + Math.floor(Math.random() * 2);
+      if (T.boss) lane = Math.floor(LANES / 2) - 1 + Math.floor(Math.random() * 2);
       const x = x0 + col * 34 + rnd(0, 14) + (T.range ? 40 : 0) + (T.boss ? 30 : 0);
       const e = makeEnemy(type, x, lane);
       B.enemies.push(e);
@@ -241,15 +250,16 @@ const Battle = (() => {
     const C = s.C;
     const sx = B.px + s.ox;
     if (C.role === 0 && s.idx > 0) return null;
-    if (C.role === 1 && s.idx > 1) return null;
+    // Long spears reach past the men in front, so every spearman in a file fights.
+    const reach = C.reach + (C.role === 1 ? s.rank * RANK_SP : 0);
     let best = null, bd = Infinity;
     if (C.role <= 1) {
       for (const e of B.enemies) {
         if (e.dead) continue;
         const dy = Math.abs(e.y - s.y);
-        if (dy > LANE_SP * 1.3) continue;
+        if (dy > LANE_SP * 1.1) continue;
         const dx = e.x - sx;
-        if (dx < -12 || dx > C.reach + 16 * e.scale) continue;
+        if (dx < -12 || dx > reach + 16 * e.scale) continue;
         const score = dx + dy * 2;
         if (score < bd) { bd = score; best = e; }
       }
@@ -372,7 +382,7 @@ const Battle = (() => {
       if (B.dustT <= 0) {
         B.dustT = B.charging ? 0.05 : 0.13;
         const l = Math.floor(Math.random() * LANES);
-        const back = B.lanes[l].length ? slotX(l, B.lanes[l].length - 1) : -RANK_SP * 3;
+        const back = slotX(l, RANKS - 1);
         B.fx.push({ kind: 'dust', x: B.px + back - 10 + rnd(-6, 6), y: laneY(l) - 2, t: 0, dur: 0.45 });
       }
     } else {
@@ -400,7 +410,7 @@ const Battle = (() => {
       const lane = B.lanes[l];
       for (let i = 0; i < lane.length; i++) {
         const s = lane[i];
-        s.ox += (slotX(l, i) - s.ox) * Math.min(1, dt * 5);
+        s.ox += (slotX(l, s.rank) - s.ox) * Math.min(1, dt * 5);
         s.y = laneY(l);
         if (s.spawnT > 0) s.spawnT -= dt;
         if (s.hitT > 0) s.hitT -= dt;
@@ -965,7 +975,7 @@ const Battle = (() => {
       const x = it.s ? (it.dying ? u.wx : B.px + u.ox) - B.camX : u.x - B.camX;
       const sc = (u.scale || 1) * d;
       g.globalAlpha = it.dying ? Math.max(0, 1 - u.deathT / 0.9) : u.dead ? Math.max(0, 1 - u.deathT / 0.8) : 1;
-      if (it.s && !it.dying && u.grade >= 2) {
+      if (it.s && !it.dying && u.grade >= 1) {
         const col = GRADES[u.grade].color;
         const pulse = u.grade >= 4 ? 0.15 * Math.sin(B.time * 4 + u.phase) : 0;
         g.fillStyle = col;
@@ -1199,7 +1209,7 @@ const Battle = (() => {
         case 'wave': {
           const wx = f.x - B.camX;
           const a = Math.min(1, (f.dur - f.t) * 3);
-          for (let i = 0; i < 4; i++) drawIcon('assets/skills/fire-wave.png', wx - (i % 2) * 8, laneY0 - 10 + i * LANE_SP * 2.1, 52, 0, a);
+          for (let i = 0; i < Math.ceil(LANES / 2); i++) drawIcon('assets/skills/fire-wave.png', wx - (i % 2) * 8, laneY0 - 10 + i * LANE_SP * 2, 52, 0, a);
           break;
         }
         case 'cloud':
@@ -1340,11 +1350,19 @@ const Battle = (() => {
     return B.lanes.map((lane) => lane.map((s) => [s.cls, s.grade, s.set, Math.round(s.hp / s.maxHp * 100) / 100]));
   }
 
+  // Old saves may hold other classes or a bigger formation: keep the best soldiers that fit.
   function restoreArmy(snap) {
     for (let l = 0; l < LANES; l++) B.lanes[l] = [];
+    const all = [];
     snap.forEach((lane, l) => lane.forEach(([cls, grade, set, hp]) => {
-      if (CLASSES[cls] && GRADES[grade]) addSoldier(cls, grade, { set, hp: Math.max(0.2, hp), lane: l });
+      cls = CLASSES[cls] ? cls : LEGACY_CLASS[cls];
+      if (cls && GRADES[grade]) all.push({ cls, grade, set, hp, l });
     }));
+    const sameShape = snap.length === LANES && snap.every((lane) => lane.length <= RANKS);
+    all.sort((a, b) => b.grade - a.grade);
+    for (const s of all.slice(0, SLOTS)) {
+      addSoldier(s.cls, s.grade, { set: s.set, hp: Math.max(0.2, s.hp), lane: sameShape ? s.l : undefined });
+    }
   }
 
   function soldiers() { return B.lanes.flat(); }

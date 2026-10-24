@@ -5,8 +5,8 @@
 const asset = (p) => (window.ASSET_DATA && window.ASSET_DATA[p]) || p;
 const FONT_STACK = '"ONE Mobile POP", "Jua", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 
-const LANES = 8;          // files (rows on screen)
-const RANKS = 6;          // ranks (depth of the phalanx)
+const LANES = 6;          // files (rows on screen)
+const RANKS = 3;          // ranks (depth of the phalanx): spears up front, archers always in the last rank
 const SLOTS = LANES * RANKS;
 
 const GRADES = [
@@ -18,34 +18,20 @@ const GRADES = [
   { name: '신화', color: '#ff5a55', dark: '#a3181e', mult: 15 },
 ];
 
-// Era outfits worn by each grade.
-const GRADE_SETS = [
-  ['primitive-handmade-01-v1', 'primitive-handmade-02-v1', 'primitive-handmade-03-v1'],
-  ['bronze-handmade-01-v1', 'bronze-handmade-02-v1', 'bronze-handmade-03-v1', 'bronze-handmade-04-v1'],
-  ['classical-handmade-01-v1', 'classical-handmade-02-v1', 'classical-handmade-03-v1', 'classical-handmade-04-v1', 'roman-legionary-v1', 'gladiator-iron-v1'],
-  ['medieval-handmade-01-v1', 'medieval-handmade-02-v1', 'medieval-handmade-03-v1', 'medieval-handmade-04-v1', 'medieval-handmade-05-v1', 'medieval-handmade-06-v1', 'medieval-surcoat-v1'],
-  ['steam-knight-01-v1', 'steam-knight-02-v1', 'steam-knight-03-v1'],
-  ['quantum-handmade-01-v1', 'quantum-handmade-02-v1', 'quantum-handmade-03-v1'],
-];
+// Every soldier is a Roman legionary; grade shows through the weapon and the aura underfoot.
+const SOLDIER_SET = 'roman-legionary-v1';
+const GRADE_SETS = GRADES.map(() => [SOLDIER_SET]);
 
-// role: 0 front-line melee, 1 spear (second rank reach), 2 ranged, 3 caster
+// role 1: spear and shield, fights from the front ranks; role 2: archer, always in the last rank.
 const CLASSES = {
-  sword: { name: '검사', role: 0, weight: 26, shield: true, atk: 10, hp: 85, spd: 0.9, reach: 30, anim: 'slash', idle: -0.35,
-    weapons: ['dagger', 'bronzeSword', 'gladius', 'longsword', 'flameSword', 'quantumBlade'] },
-  spear: { name: '창병', role: 1, weight: 22, shield: true, atk: 9, hp: 75, spd: 1.0, reach: 64, anim: 'thrust', idle: -0.06,
-    weapons: ['stoneSpear', 'bronzeSpear', 'pike', 'halberd', 'halberd', 'trident'] },
-  axe: { name: '도끼전사', role: 0, weight: 14, atk: 17, hp: 95, spd: 1.35, reach: 30, splash: 26, anim: 'chop', idle: -0.5,
-    weapons: ['stoneAxe', 'bronzeAxe', 'ironAxe', 'battleAxe', 'cleaver', 'quantumScythe'] },
-  mace: { name: '철퇴병', role: 0, weight: 12, shield: true, atk: 12, hp: 105, spd: 1.15, reach: 28, stun: 0.4, anim: 'chop', idle: -0.45,
-    weapons: ['boneClub', 'spikedClub', 'bigClub', 'morningstar', 'morningstar', 'quantumScythe'] },
-  bow: { name: '궁수', role: 2, weight: 14, atk: 8, hp: 55, spd: 1.25, range: 300, proj: 'arrow', anim: 'shoot',
+  spear: { name: '창방패병', role: 1, weight: 65, shield: true, atk: 18, hp: 160, spd: 1.0, reach: 64, anim: 'thrust', idle: -0.06,
+    weapons: ['bronzeSpear', 'bronzeSpear', 'pike', 'pike', 'halberd', 'trident'] },
+  bow: { name: '궁수', role: 2, weight: 35, atk: 16, hp: 110, spd: 1.25, range: 300, proj: 'arrow', anim: 'shoot',
     weapons: ['shortBow', 'bronzeBow', 'longBow', 'warBow', 'crossbow', 'heavyCrossbow'] },
-  gun: { name: '총사', role: 2, weight: 6, atk: 21, hp: 55, spd: 2.0, range: 280, proj: 'bullet', anim: 'shoot',
-    weapons: ['flintlock', 'piratePistol', 'musket', 'blunderbuss', 'steamRifle', 'quantumRifle'] },
-  staff: { name: '마법사', role: 3, weight: 6, atk: 11, hp: 50, spd: 1.7, range: 270, proj: 'orb', splash: 30, anim: 'cast',
-    weapons: ['staff', 'staff', 'staff', 'staff', 'staff', 'staff'] },
 };
 const CLASS_IDS = Object.keys(CLASSES);
+// Saves from the mixed-class version: ranged units become archers, everything else spearmen.
+const LEGACY_CLASS = { sword: 'spear', axe: 'spear', mace: 'spear', gun: 'bow', staff: 'bow' };
 
 // Recruit level -> grade odds (percent).
 const RECRUIT_ODDS = [
@@ -60,7 +46,7 @@ const RECRUIT_ODDS = [
   [12, 28, 30, 19, 9, 2],
   [8, 24, 32, 22, 11, 3],
 ];
-const RECRUIT_XP = [15, 35, 70, 120, 190, 280, 400, 560, 760];
+const RECRUIT_XP = [8, 18, 35, 60, 95, 140, 200, 280, 380];
 
 const ENEMY_TYPES = {
   grunt: { name: '오크 전사', look: { set: 'orc-monster-v1' }, weapons: ['boneClub', 'stoneAxe', 'spikedClub', 'rustySword'],
@@ -140,7 +126,7 @@ const F = {
   enemyHp: (s) => 30 * Math.pow(1.175, s),
   enemyAtk: (s) => 7 * Math.pow(1.165, s),
   goldPerKill: (s) => 3 * Math.pow(1.14, s),
-  summonCost: (s) => Math.round(20 * Math.pow(1.14, s)),
+  summonCost: (s) => Math.round(35 * Math.pow(1.14, s)),
   upgradeCost: (u, lv) => Math.round(u.cost * Math.pow(u.rate, lv)),
   stageGems: (s) => 10 + Math.floor(s / 5) * 2,
   chapterOf: (s) => Math.floor(s / STAGES_PER_CHAPTER),

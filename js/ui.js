@@ -323,13 +323,14 @@ const UI = (() => {
         <button class="btn gold" id="btnFill">${GOLD}<span>빈자리 모두 보충</span></button></div>
       <p class="hint">같은 등급 병사 3명을 합성하면 한 단계 높은 등급 병사 1명이 됩니다. 남는 자리는 뽑기로 채우세요!</p>`;
     const grid = $('#formation', t);
+    grid.style.setProperty('--ranks', RANKS);
     for (let l = 0; l < LANES; l++) {
       for (let c = 0; c < RANKS; c++) {
         const cell = el('button', 'cell', '<canvas></canvas><i class="hp"><b></b></i>');
         cell.dataset.lane = l;
         cell.dataset.rank = RANKS - 1 - c;
         tap(cell, () => {
-          const s = Battle.B.lanes[l][RANKS - 1 - c];
+          const s = Battle.B.lanes[l].find((o) => o.rank === RANKS - 1 - c);
           selectedSoldier = s || null;
           sfx('UiTap', 0.4);
           refreshArmyTab(true);
@@ -346,7 +347,7 @@ const UI = (() => {
     let total = 0;
     const counts = GRADES.map(() => 0);
     for (const cell of $$('#formation .cell')) {
-      const s = B.lanes[+cell.dataset.lane][+cell.dataset.rank];
+      const s = B.lanes[+cell.dataset.lane].find((o) => o.rank === +cell.dataset.rank);
       const sid = s ? s.id : 0;
       if (s) counts[s.grade]++;
       if (force || cell._sid !== sid) {
@@ -367,7 +368,7 @@ const UI = (() => {
     if (selectedSoldier) {
       const G = GRADES[s.grade];
       const atk = s.C.atk * G.mult * Game.mods.atk;
-      const roleText = ['전열 근접', '2열까지 공격', '원거리', '원거리 범위'][s.C.role];
+      const roleText = ['전열 근접', '앞열 · 긴 창 찌르기', '뒷열 · 원거리 사격', '원거리 범위'][s.C.role];
       if (info._sid !== s.id || force) {
         info._sid = s.id;
         info.innerHTML = `<canvas class="big"></canvas><div class="sd">
@@ -380,7 +381,7 @@ const UI = (() => {
       setText($('.sh', info), `${fmt(Math.max(0, s.hp))}/${fmt(s.maxHp)}`);
     } else if (info._sid !== 0) {
       info._sid = 0;
-      info.innerHTML = '<p class="hint">병사를 눌러 정보를 확인하세요 · 근접병은 앞열, 원거리병은 뒷열에 자동 배치됩니다</p>';
+      info.innerHTML = '<p class="hint">병사를 눌러 정보를 확인하세요 · 창방패병은 앞열부터, 궁수는 항상 맨 뒷열에 배치됩니다</p>';
     }
     const cost = Game.summonCost();
     const empty = SLOTS - Battle.aliveCount();
@@ -515,7 +516,7 @@ const UI = (() => {
       </div>
       <div class="bigcard classes"><h3>병종 안내</h3><div class="classlist">${CLASS_IDS.map((c) => {
         const C = CLASSES[c];
-        return `<div class="cl"><img src="${asset(MANIFEST.weapons[C.weapons[2]].f)}" alt=""><b>${C.name}</b><span>${['전열 근접', '2열 공격', '원거리', '범위 마법'][C.role]}</span></div>`;
+        return `<div class="cl"><img src="${asset(MANIFEST.weapons[C.weapons[2]].f)}" alt=""><b>${C.name}</b><span>${['전열 근접', '앞열 · 창 찌르기', '뒷열 · 활 사격', '범위 마법'][C.role]}</span></div>`;
       }).join('')}</div></div>`;
     holdRepeat($('#sOne', t), (repeat) => Game.summonOne(repeat) ? true : false);
     tap($('#sFill', t), () => Game.summonFill());
