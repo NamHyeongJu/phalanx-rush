@@ -1,52 +1,51 @@
 'use strict';
-// Game tables: grades, soldier classes, enemies, skills, upgrades, themes, quests.
+// Game tables: formation, equipment presentation, enemies, skills, upgrades, themes, quests.
 
 // Resolves an asset path; the single-file build embeds files in window.ASSET_DATA.
 const asset = (p) => (window.ASSET_DATA && window.ASSET_DATA[p]) || p;
 const FONT_STACK = '"ONE Mobile POP", "Jua", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 
 const LANES = 6;          // files (rows on screen)
-const RANKS = 3;          // ranks (depth of the phalanx): spears up front, archers always in the last rank
+const RANKS = 3;          // ranks: two ranks of spears in front, archers always in the last rank
 const SLOTS = LANES * RANKS;
+const SPEAR_RANKS = 2;
 
+// Skill rarities (skills keep their own gacha grades).
 const GRADES = [
-  { name: '일반', color: '#b5bdc6', dark: '#59626c', mult: 1 },
-  { name: '고급', color: '#6cd65f', dark: '#2c7a2a', mult: 1.7 },
-  { name: '희귀', color: '#4aa8ff', dark: '#1d5aa6', mult: 2.9 },
-  { name: '영웅', color: '#c46dff', dark: '#6a2ba3', mult: 5 },
-  { name: '전설', color: '#ffc531', dark: '#a86a00', mult: 8.5 },
-  { name: '신화', color: '#ff5a55', dark: '#a3181e', mult: 15 },
+  { name: '일반', color: '#b5bdc6', mult: 1 },
+  { name: '고급', color: '#6cd65f', mult: 1.7 },
+  { name: '희귀', color: '#4aa8ff', mult: 2.9 },
+  { name: '영웅', color: '#c46dff', mult: 5 },
+  { name: '전설', color: '#ffc531', mult: 8.5 },
+  { name: '신화', color: '#ff5a55', mult: 15 },
 ];
 
-// Every soldier is a Roman legionary; grade shows through the weapon and the aura underfoot.
-const SOLDIER_SET = 'roman-legionary-v1';
-const GRADE_SETS = GRADES.map(() => [SOLDIER_SET]);
-
-// role 1: spear and shield, fights from the front ranks; role 2: archer, always in the last rank.
+// Every soldier wears the equipped outfit. Stats are the army's equipment totals scaled per class.
+// role 1: spear and shield, front ranks; role 2: archer, last rank.
 const CLASSES = {
-  spear: { name: '창방패병', role: 1, weight: 65, shield: true, atk: 18, hp: 160, spd: 1.0, reach: 64, anim: 'thrust', idle: -0.06,
-    weapons: ['bronzeSpear', 'bronzeSpear', 'pike', 'pike', 'halberd', 'trident'] },
-  bow: { name: '궁수', role: 2, weight: 35, atk: 16, hp: 110, spd: 1.25, range: 300, proj: 'arrow', anim: 'shoot',
-    weapons: ['shortBow', 'bronzeBow', 'longBow', 'warBow', 'crossbow', 'heavyCrossbow'] },
+  spear: { name: '창방패병', role: 1, shield: true, atkF: 1 / 25, hpF: 1 / 26, spd: 1.0, reach: 48, anim: 'thrust', idle: -0.06 },
+  bow: { name: '궁수', role: 2, atkF: 0.9 / 25, hpF: 0.7 / 26, spd: 1.25, range: 300, proj: 'arrow', anim: 'shoot' },
 };
 const CLASS_IDS = Object.keys(CLASSES);
-// Saves from the mixed-class version: ranged units become archers, everything else spearmen.
-const LEGACY_CLASS = { sword: 'spear', axe: 'spear', mace: 'spear', gun: 'bow', staff: 'bow' };
+const rankClass = (rank) => (rank < SPEAR_RANKS ? 'spear' : 'bow');
 
-// Recruit level -> grade odds (percent).
-const RECRUIT_ODDS = [
-  [80, 18, 2, 0, 0, 0],
-  [70, 24, 5, 1, 0, 0],
-  [60, 28, 9, 2.6, 0.4, 0],
-  [50, 30, 14, 5, 1, 0],
-  [40, 32, 18, 7.5, 2.3, 0.2],
-  [32, 32, 22, 10, 3.5, 0.5],
-  [25, 31, 25, 13, 5.2, 0.8],
-  [18, 30, 28, 16, 6.8, 1.2],
-  [12, 28, 30, 19, 9, 2],
-  [8, 24, 32, 22, 11, 3],
-];
-const RECRUIT_XP = [8, 18, 35, 60, 95, 140, 200, 280, 380];
+// ---------- equipment (forge-clone-2 rules, data in js/equipment.js) ----------
+const EQ_SLOTS = ['helmet', 'armor', 'gloves', 'necklace', 'ring', 'weapon', 'shoes', 'belt'];
+const EQ_SLOT_NAME = { helmet: '투구', armor: '갑옷', gloves: '장갑', necklace: '목걸이', ring: '반지', weapon: '무기', shoes: '신발', belt: '벨트' };
+const EQ_ITEM_TYPE = { helmet: 'Helmet', armor: 'Armour', gloves: 'Gloves', necklace: 'Necklace', ring: 'Ring', weapon: 'Weapon', shoes: 'Shoes', belt: 'Belt' };
+const AGE_NAMES = ['원시 시대', '청동기 시대', '고대 제국 시대', '중세 시대', '대항해 시대', '산업 시대', '세계대전 시대', '정보화 시대', '우주 시대', '양자 시대'];
+const AGE_SHORT = ['원시', '청동기', '고대 제국', '중세', '대항해', '산업', '세계대전', '정보화', '우주', '양자'];
+// Tier = age + 1; colors from forge-clone-2 _tokens.uss (--tier-1..10).
+const TIER_COLORS = ['#b4ae9c', '#72baff', '#7bcb78', '#f4c34a', '#ff9087', '#d398f3', '#43dddd', '#ea90d8', '#88b5ff', '#b0a7ff'];
+const TIER_GRADIENTS = { 8: ['#EA90D8', '#FFB5CB'], 9: ['#88B5FF', '#8CE4EE'], 10: ['#B0A7FF', '#FF93F8'] };
+const OPTION_COUNT = [0, 0, 0, 1, 1, 1, 1, 2, 2, 2]; // per age
+const ITEM_MAX_LEVEL = 98;
+const STAT_SCALE = 15;            // CombatStatScalePermille 1500 x CombatStatUnitMultiplier 10
+const LEVEL_SCALING = 1.01;       // LevelScalingBase
+const BASE_ATTACK = 10 * STAT_SCALE, BASE_HEALTH = 80 * STAT_SCALE;
+const PENDING_CAP = 20;
+const DICE_LEVEL_MAX = 35;
+const SELL_EXP = 20;
 
 const ENEMY_TYPES = {
   grunt: { name: '오크 전사', look: { set: 'orc-monster-v1' }, weapons: ['boneClub', 'stoneAxe', 'spikedClub', 'rustySword'],
@@ -101,9 +100,13 @@ const SKILL_COST = { one: 50, ten: 450 };
 
 const UPGRADES = [
   { id: 'atk', name: '공격력', icon: 'assets/icons/fist.png', tile: true, cost: 25, rate: 1.13,
-    val: (l) => Math.pow(1.06, l), show: (v) => '+' + fmtPct(v - 1) },
+    val: (l) => Math.pow(1.05, l), show: (v) => '+' + fmtPct(v - 1) },
   { id: 'hp', name: '체력', icon: 'assets/icons/meat.png', tile: true, cost: 25, rate: 1.13,
-    val: (l) => Math.pow(1.065, l), show: (v) => '+' + fmtPct(v - 1) },
+    val: (l) => Math.pow(1.05, l), show: (v) => '+' + fmtPct(v - 1) },
+  { id: 'reinforceCd', name: '병력 보충 쿨타임', icon: 'assets/icons/banner.png', cost: 80, rate: 1.3, max: 40,
+    val: (l) => Math.max(1, 8 * Math.pow(0.95, l)), show: (v) => v.toFixed(1) + '초마다' },
+  { id: 'reinforceCount', name: '한 번에 보충하는 병력', icon: 'assets/weapons/roman-shield.png', cost: 300, rate: 2.0, max: SLOTS - 1,
+    val: (l) => 1 + l, show: (v) => v + '명' },
   { id: 'aspd', name: '공격 속도', icon: 'assets/icons/rage.png', tile: true, cost: 60, rate: 1.22, max: 40,
     val: (l) => 1 + 0.025 * l, show: (v) => '+' + fmtPct(v - 1) },
   { id: 'crit', name: '치명타 확률', icon: 'assets/icons/crown-fist.png', tile: true, cost: 80, rate: 1.2, max: 50,
@@ -112,7 +115,7 @@ const UPGRADES = [
     val: (l) => 1.5 + 0.12 * l, show: (v) => fmtPct(v) },
   { id: 'skill', name: '마력 (스킬 피해)', icon: 'assets/icons/book.png', cost: 150, rate: 1.15,
     val: (l) => 1 + 0.06 * l, show: (v) => '+' + fmtPct(v - 1) },
-  { id: 'armor', name: '방패벽', icon: 'assets/weapons/roman-shield.png', cost: 120, rate: 1.18,
+  { id: 'armor', name: '방패벽', icon: 'assets/icons/anvil.png', cost: 120, rate: 1.18, max: 28,
     val: (l) => 1 - 1 / (1 + 0.035 * l), show: (v) => '피해 -' + fmtPct(v) },
   { id: 'gold', name: '골드 획득', icon: 'assets/icons/coin.png', cost: 60, rate: 1.17,
     val: (l) => 1 + 0.06 * l, show: (v) => '+' + fmtPct(v - 1) },
@@ -123,17 +126,24 @@ const UPGRADE_BY_ID = Object.fromEntries(UPGRADES.map((u) => [u.id, u]));
 
 // ---------- formulas ----------
 const F = {
-  enemyHp: (s) => 30 * Math.pow(1.175, s),
-  enemyAtk: (s) => 7 * Math.pow(1.165, s),
+  enemyHp: (s) => 30 * Math.pow(1.19, s),
+  enemyAtk: (s) => 14 * Math.pow(1.19, s),
   goldPerKill: (s) => 3 * Math.pow(1.14, s),
-  summonCost: (s) => Math.round(35 * Math.pow(1.14, s)),
   upgradeCost: (u, lv) => Math.round(u.cost * Math.pow(u.rate, lv)),
   stageGems: (s) => 10 + Math.floor(s / 5) * 2,
-  chapterOf: (s) => Math.floor(s / STAGES_PER_CHAPTER),
   stageLabel: (s) => `${Math.floor(s / STAGES_PER_CHAPTER) + 1}-${(s % STAGES_PER_CHAPTER) + 1}`,
   theme: (s) => THEMES[Math.floor(s / STAGES_PER_CHAPTER) % THEMES.length],
   skillValue: (sk, lv) => sk.base + sk.per * (lv - 1),
   skillNeed: (lv) => lv + 1,
+  // Dice level L -> L+1: gold and seconds (forge-clone-2's research, compressed for a web session).
+  diceUpgradeCost: (L) => Math.round(300 * Math.pow(1.55, L - 1)),
+  diceUpgradeTime: (L) => Math.round(40 * Math.pow(1.14, L - 1)),
+  diceSkipGems: (secs) => Math.max(1, Math.ceil(secs / 10)),
+  // Selling pays forge-clone-2's age/level curve, priced in kills at the current stage.
+  sellGold: (item, s) => Math.max(1, Math.round(0.5 * F.goldPerKill(s) * (1 + 0.25 * item.age) * Math.pow(LEVEL_SCALING, item.lv - 1))),
+  diceDropChance: 0.04,
+  expNeed: (lv) => 100 + 30 * (lv - 1),
+  levelBonus: (lv) => 1 + 0.02 * (lv - 1),
 };
 
 function waveEnemies(s, w) {
@@ -159,8 +169,8 @@ function waveEnemies(s, w) {
 // Quest chain: kinds cycle, targets grow per tier.
 const QUEST_KINDS = [
   { stat: 'kills', text: (n) => `오크 ${n}마리 처치`, target: (t) => 30 + 30 * t },
-  { stat: 'summons', text: (n) => `병사 ${n}회 모집`, target: (t) => 8 + 8 * t },
-  { stat: 'merges', text: (n) => `병사 합성 ${n}회`, target: (t) => 2 + 3 * t },
+  { stat: 'forges', text: (n) => `주사위 ${n}회 굴리기`, target: (t) => 10 + 10 * t },
+  { stat: 'sells', text: (n) => `장비 ${n}회 판매`, target: (t) => 5 + 6 * t },
   { stat: 'upgrades', text: (n) => `능력치 강화 ${n}회`, target: (t) => 8 + 6 * t },
   { stat: 'stage', text: (n) => `스테이지 ${F.stageLabel(n - 1)} 도달`, target: (t) => 3 + 4 * t },
   { stat: 'skillSummons', text: (n) => `스킬 소환 ${n}회`, target: (t) => 5 + 5 * t },
@@ -172,16 +182,19 @@ function questDef(i) {
   return { kind, target: kind.target(tier), reward: 30 + 10 * tier };
 }
 
-// ---------- formatting ----------
-const UNITS = ['', 'K', 'M', 'B', 'T', 'aa', 'ab', 'ac', 'ad', 'ae', 'af'];
-function fmt(n) {
-  n = Math.floor(n);
-  if (n < 10000) return n.toLocaleString('en-US');
-  let i = 0;
-  let v = n;
+// ---------- formatting (forge-clone-2 compact numbers: 30,041 / 424.9k / 6m) ----------
+const UNITS = ['', 'k', 'm', 'b', 't', 'q', 'aa', 'ab', 'ac', 'ad', 'ae', 'af'];
+function compact(n, from) {
+  n = Math.max(0, n);
+  if (n < from) return Math.floor(n).toLocaleString('en-US');
+  let i = 0, v = n;
   while (v >= 1000 && i < UNITS.length - 1) { v /= 1000; i++; }
-  return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + UNITS[i];
+  const digits = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+  const s = (Math.floor(v * Math.pow(10, digits)) / Math.pow(10, digits)).toFixed(digits);
+  return (digits ? s.replace(/\.?0+$/, '') : s) + UNITS[i];
 }
+const fmt = (n) => compact(n, 100000);
+const fmtStat = (n) => compact(n, 1000);
 function fmtPct(v) {
   const p = v * 100;
   return (p >= 100 ? fmt(p) : p.toFixed(p % 1 ? 1 : 0)) + '%';

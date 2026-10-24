@@ -140,7 +140,7 @@ if ($Artifact) {
 if ($Artifact) { [void]$page.AppendLine('<style>' + $css + '</style>') }
 [void]$page.AppendLine($body)
 [void]$page.AppendLine('<script>' + $assetJs + '</script>')
-foreach ($js in 'manifest', 'data', 'engine', 'battle', 'ui', 'main') {
+foreach ($js in 'manifest', 'equipment', 'data', 'forge', 'engine', 'battle', 'ui', 'main') {
   $code = [IO.File]::ReadAllText((Join-Path $root "js\$js.js"), $utf8)
   if ($code -match '</script') { throw "$js.js contains a closing script tag" }
   [void]$page.AppendLine('<script>' + $code + '</script>')

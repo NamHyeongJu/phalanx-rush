@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Wardrobe test</title>
+<style>body{margin:0;background:#3a3446}canvas{display:block}</style>
+<canvas id="c" width="1200" height="1000"></canvas>
+<script src="../js/manifest.js"></script>
+<script src="../js/equipment.js"></script>
+<script>
+  // Paths in the generated data are relative to the game root.
+  for (const p of Object.values(EQUIP.parts)) p.f = '../' + p.f;
+  const asset = (p) => p;
+</script>
+<script src="../js/engine.js"></script>
+<script>
+(async () => {
+  await Engine.loadAll(Object.values(EQUIP.parts).map((p) => p.f));
+  const g = document.getElementById('c').getContext('2d');
+  const armors = Object.entries(EQUIP.armors), helmets = Object.values(EQUIP.helmets), weapons = Object.values(EQUIP.itemWeapons);
+  const s = 0.155 / Engine.PS * 1.35;
+  const D = EQUIP.defaults;
+  for (let i = 0; i < 44; i++) {
+    const x = 50 + (i % 11) * 106, y = 120 + Math.floor(i / 11) * 165;
+    const a = armors[i % armors.length][1], w = weapons[i % weapons.length];
+    const outfit = { body: a[0], armL: a[1], armR: a[2], handL: a[3] === 'None' ? null : a[3], handR: a[4] === 'None' ? null : a[4],
+      face: D.face, helmet: helmets[i], weapon: w[0], weaponScale: w[3], shield: i % 2 ? D.shield : null };
+    Engine.drawLook(g, Engine.look({ outfit }), x, y, s, false, i % 2 ? {} : { arm: -1.15, wpn: 1.15 });
+    g.fillStyle = '#fff'; g.font = '9px sans-serif'; g.fillText(armors[i % armors.length][0] + ' ' + helmets[i].replace('-v1-helmet', ''), x - 48, y + 14);
+  }
+  // bare recruit with round fists
+  const bare = { body: D.body, armL: D.armL, armR: D.armR, face: D.face, weapon: D.spear, shield: D.shield };
+  Engine.drawLook(g, Engine.look({ outfit: bare }), 80, 900, s * 1.3, false, {});
+  Engine.drawLook(g, Engine.look({ outfit: { ...bare, shield: null, weapon: D.bow } }), 200, 900, s * 1.3, false, { arm: -1.15, wpn: 1.15 });
+  document.title = 'done';
+})();
+</script>
