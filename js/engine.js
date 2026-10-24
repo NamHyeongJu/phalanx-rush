@@ -125,65 +125,31 @@ const Engine = (() => {
     return { c, x: minX - 1, y: minY - 1 };
   }
 
-  // Outfits without hand sprites get forge-clone-2's round fist: a 0.24-unit skin circle.
-  let fistPart = null;
-  function fist() {
-    if (fistPart) return fistPart;
-    const r = 12 * PS * 2.4, c = document.createElement('canvas');
-    c.width = c.height = Math.ceil(r * 2 + 4);
-    const g = c.getContext('2d');
-    g.beginPath(); g.arc(c.width / 2, c.height / 2, r, 0, Math.PI * 2);
-    g.fillStyle = '#f6c99f'; g.fill();
-    g.lineWidth = Math.max(1.5, r * 0.28); g.strokeStyle = '#1c1410'; g.stroke();
-    fistPart = { c, px: c.width / 2, py: c.height / 2, w: c.width, h: c.height };
-    return fistPart;
-  }
-
-  // Resolve either a character set (enemies) or an explicit outfit of sprite labels (soldiers).
-  function lookDefs(opts) {
-    if (opts.outfit) {
-      const o = opts.outfit, P = (l) => (l ? EQUIP.parts[l] : null);
-      return { armL: P(o.armL), body: P(o.body), hairBack: null, head: null, face: P(o.face), helmet: P(o.helmet),
-        armR: P(o.armR), handL: P(o.handL), handR: P(o.handR), weapon: P(o.weapon), shield: P(o.shield),
-        weaponScale: o.weaponScale || 1, fists: true };
-    }
-    const S = MANIFEST.sets[opts.set];
-    return { armL: S.armL, body: S.body, hairBack: S.hairBack, head: S.head || null,
-      face: S.head ? null : MANIFEST.faces[(opts.face | 0) % MANIFEST.faces.length],
-      helmet: opts.helmet ? MANIFEST.sets[opts.helmet].helmet : S.helmet, armR: S.armR, handL: S.handL, handR: S.handR,
-      weapon: opts.weapon ? MANIFEST.weapons[opts.weapon] : null, shield: opts.shield ? MANIFEST.weapons.shield : null, weaponScale: 1 };
-  }
-
   const lookCache = new Map();
   // opts: { set, face, weapon, shield, helmet (set to borrow a helmet from), tint:[color, mode, alpha] }
-  //    or { outfit: { body, armL, armR, handL, handR, face, helmet, weapon, weaponScale, shield } } (sprite labels)
   function look(opts) {
-    const key = opts.outfit ? 'o|' + JSON.stringify(opts.outfit)
-      : [opts.set, opts.face | 0, opts.weapon || '', opts.shield ? 1 : 0, opts.helmet || '', opts.tint ? opts.tint.join(',') : ''].join('|');
+    const key = [opts.set, opts.face | 0, opts.weapon || '', opts.shield ? 1 : 0, opts.helmet || '', opts.tint ? opts.tint.join(',') : ''].join('|');
     let L = lookCache.get(key);
     if (L) return L;
-    const D = lookDefs(opts);
-    if (!D.body) return null;
+    const S = MANIFEST.sets[opts.set];
     const tint = opts.tint;
-    const foot = (D.body.h - D.body.py) + RIG.body[1]; // native y of the feet
+    const foot = (S.body.h - S.body.py) + RIG.body[1]; // native y of the feet
     const at = (name) => [RIG[name][0] * PS, (RIG[name][1] - foot) * PS];
     const P = (def) => part(def, tint);
 
     const layerA = [];
     const add = (list, name, def) => { if (def) { const p = P(def); if (p) list.push({ p, at: at(name) }); } };
-    add(layerA, 'armL', D.armL);
-    add(layerA, 'body', D.body);
-    add(layerA, 'hairBack', D.hairBack);
-    add(layerA, 'head', D.head);
-    add(layerA, 'face', D.face);
-    add(layerA, 'helmet', D.helmet);
+    add(layerA, 'armL', S.armL);
+    add(layerA, 'body', S.body);
+    add(layerA, 'hairBack', S.hairBack);
+    if (S.head) add(layerA, 'head', S.head);
+    else add(layerA, 'face', MANIFEST.faces[(opts.face | 0) % MANIFEST.faces.length]);
+    add(layerA, 'helmet', opts.helmet ? MANIFEST.sets[opts.helmet].helmet : S.helmet);
     const layerB = [];
-    if (D.handL) add(layerB, 'handL', D.handL);
-    else if (D.fists && !D.shield) layerB.push({ p: fist(), at: at('handL') });
-    add(layerB, 'shield', D.shield);
+    add(layerB, 'handL', S.handL);
+    if (opts.shield) add(layerB, 'shield', MANIFEST.weapons.shield);
 
-    const armR = P(D.armR);
-    const handR = D.handR ? P(D.handR) : D.fists ? fist() : null;
+    const armR = P(S.armR), handR = P(S.handR);
     const shoulder = at('armR'), hand = at('weapon');
     if (!layerA.length) return null; // parts not loaded (yet); callers skip drawing
     L = {
@@ -191,8 +157,7 @@ const Engine = (() => {
       B: layerB.length ? composite(layerB) : null,
       armR: armR && { c: armR.c, x: shoulder[0] - armR.px, y: shoulder[1] - armR.py },
       handR,
-      weapon: D.weapon ? P(D.weapon) : null,
-      weaponScale: D.weaponScale,
+      weapon: opts.weapon ? part(MANIFEST.weapons[opts.weapon]) : null,
       shoulder, hand,
       top: (RIG.head[1] - foot) * PS,
       flash: null,
@@ -233,11 +198,7 @@ const Engine = (() => {
     g.translate(sx, sy); g.rotate(arm); g.translate(-sx + thrust, -sy);
     g.translate(L.hand[0], L.hand[1]);
     g.rotate(pose.wpn || 0);
-    if (L.weapon) {
-      if (L.weaponScale !== 1) { g.save(); g.scale(L.weaponScale, L.weaponScale); }
-      g.drawImage(L.weapon.c, -L.weapon.px, -L.weapon.py);
-      if (L.weaponScale !== 1) g.restore();
-    }
+    if (L.weapon) g.drawImage(L.weapon.c, -L.weapon.px, -L.weapon.py);
     if (L.handR) g.drawImage(L.handR.c, -L.handR.px, -L.handR.py);
     g.restore();
   }

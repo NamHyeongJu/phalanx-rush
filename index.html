@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#292532">
+<meta name="theme-color" content="#1b1e35">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -15,11 +15,11 @@
 <body>
 <div id="app">
   <header id="topbar">
-    <button id="btn-profile" class="profile">
-      <span class="avatar"><img src="assets/ui/profile-default.png" alt=""></span>
-      <span class="pinfo"><span class="pname">방진 사령관</span>
-        <span class="power"><img src="assets/ui/combat-power-small.png" alt=""><b id="power">0</b></span></span>
-    </button>
+    <div class="profile">
+      <div class="avatar"><img src="assets/ui/equipment-helmet.png" alt=""></div>
+      <div class="pinfo"><span class="pname">방진 사령관</span>
+        <span class="power"><img src="assets/ui/combat-power-small.png" alt=""><b id="power">0</b></span></div>
+    </div>
     <div class="cur" id="goldPill"><img src="assets/ui/currency-gold.png" alt="골드"><span id="gold">0</span></div>
     <div class="cur gem"><img src="assets/ui/currency-gem.png" alt="보석"><span id="gems">0</span></div>
     <button id="btnMenu" class="roundbtn" aria-label="설정">
@@ -43,87 +43,49 @@
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path class="w" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="x" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M15 9l6 6M21 9l-6 6"/></svg>
         </button>
       </div>
-    </div>
-    <div id="bossBar" hidden><div class="btop"><span class="bname"></span><span class="bhp"></span></div><div class="bbar"><i></i></div></div>
-    <div id="armyBox"><img src="assets/weapons/roman-shield.png" alt=""><b id="armyCount">0/18</b><span class="reinforce"><i></i></span><span id="reinforceText"></span></div>
-    <div id="skillBar">
-      <button id="btnAuto" aria-label="스킬 자동"><img src="assets/ui/skill-auto-on.png" alt=""></button>
-      <div id="skillSlots"></div>
+      <div id="bossBar" hidden><div class="btop"><span class="bname"></span><span class="bhp"></span></div><div class="bbar"><i></i></div></div>
+      <div id="armyBox"><img src="assets/weapons/roman-shield.png" alt=""><span>병력</span><b id="armyCount">0/48</b></div>
     </div>
     <div id="toasts"></div>
   </section>
 
-  <section id="lower">
-    <div id="home" class="page">
-      <div id="growth-row">
-        <span id="player-level">Lv.1</span>
-        <div id="player-exp"><i></i><span></span></div>
-        <button id="btn-rank" class="ui-button" aria-label="레벨 정보"><img src="assets/ui/rank-promotion.png" alt=""></button>
-      </div>
-      <div id="equip-heading-row"><span id="equip-heading">장비</span><span id="equip-power"></span></div>
-      <div id="equip-grid">
-        <div class="equip-row"></div>
-        <div class="equip-row"></div>
-      </div>
-      <div id="forge-controls">
-        <button id="pending-deck" hidden></button>
-        <div id="dice-anchor">
-          <div id="die-stage"><div id="die"></div></div>
-          <div id="dice-result" class="ui-slot" hidden><img alt=""><span></span></div>
-        </div>
-        <button id="btn-roll" class="forge-anvil" aria-label="주사위 굴리기">
-          <span class="forge-balance"><span class="forge-pattern"></span><img src="assets/ui/forge-token.png" alt=""><span id="dice-value">0</span></span>
-        </button>
-        <button id="btn-dice-level" class="ui-button"><span class="t">주사위</span><span class="l" id="dice-level-label">레벨 1</span></button>
-        <span id="dice-upgrade-time"></span>
-        <button id="btn-auto-forge" class="ui-button"><span id="auto-forge-label">자동</span><img class="auto-icon" src="assets/ui/auto-forge.png" alt=""></button>
-      </div>
-    </div>
-    <div id="page-upgrade" class="page" hidden></div>
-    <div id="page-skill" class="page" hidden></div>
-    <div id="page-summon" class="page" hidden></div>
+  <section id="actionbar">
+    <div id="skillSlots"></div>
+    <button id="btnAuto" aria-label="스킬 자동"><img src="assets/ui/skill-auto-on.png" alt=""></button>
+    <button id="btnSummon">
+      <img class="contract" src="assets/ui/mercenary-contract.png" alt="">
+      <span class="stext"><b id="summonLabel">병사 뽑기</b><span class="scost"><img src="assets/ui/currency-gold.png" alt=""><span id="summonCost">0</span></span></span>
+      <em id="emptyBadge">0</em>
+      <span id="tutHand" hidden><img src="assets/ui/tutorial-hand.png" alt=""><span class="bubble">병사가 쓰러지면<br>뽑기로 보충!</span></span>
+    </button>
   </section>
 
-  <nav id="bottom-bar">
-    <button data-page="home"><img src="assets/ui/equipment-helmet.png" alt=""><span>장비</span></button>
-    <button data-page="upgrade"><img src="assets/ui/menu-growth.png" alt=""><span>강화</span></button>
-    <button data-page="skill"><img src="assets/ui/menu-growth-hood.png" alt=""><span>스킬</span></button>
-    <button data-page="summon"><img src="assets/ui/forge-crystal.png" alt=""><span>소환</span></button>
-  </nav>
+  <main id="panel">
+    <div class="tab" id="tab-upgrade"></div>
+    <div class="tab" id="tab-army" hidden></div>
+    <div class="tab" id="tab-skill" hidden></div>
+    <div class="tab" id="tab-summon" hidden></div>
+  </main>
 
-  <div id="forge-layer" hidden>
-    <div id="forge-dimmer"></div>
-    <div id="forge-comparison" class="ui-surface">
-      <div class="compare-heading"><span id="compare-equipped-label">장착됨</span></div>
-      <div id="compare-current" class="comparison-item"></div>
-      <div id="compare-incoming-panel">
-        <div id="compare-incoming" class="comparison-item"></div>
-        <div class="compare-actions">
-          <button id="compare-sell" class="ui-button sell-button">판매</button>
-          <button id="compare-equip" class="ui-button">장착</button>
-        </div>
-      </div>
-    </div>
-    <div id="forge-empty-slot" class="ui-surface" hidden>
-      <div id="empty-slot-item" class="comparison-item"></div>
-      <div class="empty-slot-actions"><button id="empty-slot-equip" class="ui-button">장착</button></div>
-    </div>
-  </div>
+  <nav id="nav">
+    <button data-tab="upgrade"><img src="assets/ui/menu-growth.png" alt=""><span>강화</span></button>
+    <button data-tab="army"><img src="assets/ui/menu-guild.png" alt=""><span>부대</span></button>
+    <button data-tab="skill"><img src="assets/ui/menu-growth-hood.png" alt=""><span>스킬</span></button>
+    <button data-tab="summon"><img src="assets/ui/forge-crystal.png" alt=""><span>소환</span></button>
+  </nav>
 
   <div id="modal" hidden></div>
 
   <div id="loading">
-    <img class="lhelm" src="assets/ui/forge-token.png" alt="">
+    <img class="lhelm" src="assets/ui/equipment-helmet.png" alt="">
     <h1>방진 돌격대</h1>
-    <p>주사위로 장비를 맞추고 오크 대군을 향해 돌격하라!</p>
+    <p>오크 대군을 향해 돌격하라!</p>
     <div class="lbar"><i></i></div>
   </div>
 </div>
 
 <script src="js/manifest.js"></script>
-<script src="js/equipment.js"></script>
 <script src="js/data.js"></script>
-<script src="js/forge.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/battle.js"></script>
 <script src="js/ui.js"></script>

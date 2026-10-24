@@ -21,7 +21,7 @@ const Battle = (() => {
     stage: 0, wave: 0, waveActive: false, pending: false, pendT: 0,
     state: 'run', stateT: 0, boss: null, banner: null, flash: null,
     shake: 0, cd: {}, castGap: 0, aspdT: 0, aspdV: 0, themeIdx: -1, themeFade: 0,
-    goldAnchor: { x: 60, y: -20 }, dmgStat: [0, 0], reinforceT: 8, uniform: null,
+    goldAnchor: { x: 60, y: -20 }, dmgStat: [0, 0],
   };
 
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -47,8 +47,7 @@ const Battle = (() => {
     cv.height = Math.max(1, Math.round(r.height * dpr));
     k = r.width / VW;
     VH = r.height / k;
-    // Keep the bottom file clear of the skill bar that overlays the battlefield.
-    laneY0 = VH - 64 - (LANES - 1) * LANE_SP;
+    laneY0 = VH - 26 - (LANES - 1) * LANE_SP;
     groundTop = laneY0 - 34;
     for (let l = 0; l < LANES; l++) for (const s of B.lanes[l]) s.y = laneY(l);
   }
@@ -56,14 +55,14 @@ const Battle = (() => {
   function toVirtual(cssX, cssY) { return { x: cssX / k, y: cssY / k }; }
 
   // ---------- soldiers ----------
-  // Soldier stats come from the army's equipment (Game.army), shared by every soldier of a class.
-  const soldierMaxHp = (s) => Game.army[s.cls].hp;
-  const soldierAtk = (s) => Game.army[s.cls].atk;
+  const rolePri = (s) => Math.min(s.C.role, 2);
+  const soldierMaxHp = (s) => s.C.hp * GRADES[s.grade].mult * Game.mods.hp;
+  const soldierAtk = (s) => s.C.atk * GRADES[s.grade].mult * Game.mods.atk;
 
-  // Spearmen fill a file from the front; the archer always stands in the last rank.
+  // Spearmen fill a file from the front; archers always stand in the last ranks.
   function sortLane(l) {
     const lane = B.lanes[l];
-    lane.sort((a, b) => (a.C.role - b.C.role) || (a.id - b.id));
+    lane.sort((a, b) => (rolePri(a) - rolePri(b)) || (b.grade - a.grade) || (a.id - b.id));
     const archers = lane.filter((s) => s.C.role >= 2).length;
     let front = 0, back = RANKS - archers;
     lane.forEach((s, i) => { s.idx = i; s.rank = s.C.role >= 2 ? back++ : front++; });
@@ -71,49 +70,72 @@ const Battle = (() => {
 
   const slotX = (l, i) => -i * RANK_SP + ((l & 1) ? 5 : 0);
   const aliveCount = () => B.lanes.reduce((a, l) => a + l.length, 0);
-  const laneCount = (l, cls) => B.lanes[l].filter((s) => s.cls === cls).length;
 
-  function addSoldier(cls, lane, opt = {}) {
+  function addSoldier(cls, grade, opt = {}) {
     const C = CLASSES[cls];
+    // Prefer the open file with the fewest soldiers of this kind (about one archer per file).
+    let best = -1, bestScore = Infinity;
+    const order = [...Array(LANES).keys()].sort(() => Math.random() - 0.5);
+    for (const l of order) {
+      const lane = B.lanes[l];
+      if (lane.length >= RANKS) continue;
+      const score = lane.filter((o) => (o.C.role >= 2) === (C.role >= 2)).length * 4 + lane.length;
+      if (score < bestScore) { bestScore = score; best = l; }
+    }
+    if (opt.lane != null && B.lanes[opt.lane].length < RANKS) best = opt.lane;
+    if (best < 0) return null;
+    const sets = GRADE_SETS[grade];
+    const set = opt.set && sets.includes(opt.set) ? opt.set : sets[Math.floor(Math.random() * sets.length)];
     const s = {
-      id: nextId++, cls, C, lane, idx: 0, rank: 0, ox: 0, y: laneY(lane),
+      id: nextId++, cls, C, grade, set, lane: best, idx: 0, rank: 0, ox: 0, y: laneY(best),
+      look: Engine.look({ set, face: 0, weapon: C.weapons[grade], shield: !!C.shield }),
       hp: 1, maxHp: 1, cd: Math.random() * C.spd, anim: null, hitT: 0, dead: false, deathT: 0,
       spawnT: 0, shield: 0, shieldT: 0, phase: Math.random() * 6.28,
     };
     s.maxHp = soldierMaxHp(s);
     s.hp = s.maxHp * (opt.hp != null ? opt.hp : 1);
-    B.lanes[lane].push(s);
-    sortLane(lane);
-    s.ox = slotX(lane, s.rank);
+    B.lanes[best].push(s);
+    sortLane(best);
+    s.ox = slotX(best, s.rank);
     if (opt.drop) {
       s.spawnT = 0.5;
-      B.fx.push({ kind: 'beam', x: B.px + s.ox, y: s.y, t: 0, dur: 0.85, color: '#ffe08a', grade: 2 });
+      B.fx.push({ kind: 'beam', x: B.px + s.ox, y: s.y, t: 0, dur: 0.85, color: GRADES[grade].color, grade });
     }
     return s;
   }
 
-  // Empty places in the fixed formation, front-line spears first, spread across files.
-  function openSlots() {
-    const spears = [], bows = [];
-    for (let need = 1; need <= SPEAR_RANKS; need++) {
-      for (let l = 0; l < LANES; l++) if (laneCount(l, 'spear') < need) spears.push(l);
-    }
-    for (let l = 0; l < LANES; l++) if (laneCount(l, 'bow') < RANKS - SPEAR_RANKS) bows.push(l);
-    return spears.map((l) => ['spear', l]).concat(bows.map((l) => ['bow', l]));
+  // Three soldiers of one grade become one soldier of the next grade.
+  function mergeGroups() {
+    const groups = GRADES.map(() => []);
+    for (const lane of B.lanes) for (const s of lane) if (s.grade < GRADES.length - 1) groups[s.grade].push(s);
+    return groups;
   }
 
-  // Fill up to n empty places. Returns how many soldiers joined.
-  function reinforce(n, drop = true) {
-    let added = 0;
-    while (added < n) {
-      const open = openSlots();
-      if (!open.length) break;
-      const [cls, l] = open[0];
-      addSoldier(cls, l, { drop });
-      added++;
+  function mergeCount() {
+    return mergeGroups().reduce((a, grp) => a + Math.floor(grp.length / 3), 0);
+  }
+
+  // One step per press: soldiers made by this merge wait for the next press.
+  function mergeAll() {
+    const made = [];
+    const groups = mergeGroups();
+    for (let gIdx = 0; gIdx < GRADES.length - 1; gIdx++) {
+      const grp = groups[gIdx].sort((a, b) => a.idx - b.idx);
+      while (grp.length >= 3) {
+        const trio = grp.splice(grp.length - 3, 3);
+        const tally = {};
+        for (const s of trio) tally[s.cls] = (tally[s.cls] || 0) + 1;
+        const cls = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
+        for (const s of trio) {
+          const lane = B.lanes[s.lane];
+          lane.splice(lane.indexOf(s), 1);
+          B.fx.push({ kind: 'spark', x: B.px + s.ox, y: s.y - 20, t: 0, dur: 0.35, crit: true });
+        }
+        trio.forEach((s) => sortLane(s.lane));
+        made.push(addSoldier(cls, gIdx + 1, { drop: true, lane: trio[0].lane }));
+      }
     }
-    if (added && drop) sfx('UiConfirm', 0.3, 1.2);
-    return added;
+    return made;
   }
 
   function refreshSoldierStats() {
@@ -124,21 +146,8 @@ const Battle = (() => {
     }
   }
 
-  // Every soldier of a class shares one look built from the equipped outfit.
-  function setUniform(outfit) {
-    const spear = Engine.look({ outfit: { body: outfit.body, armL: outfit.armL, armR: outfit.armR, handL: outfit.handL, handR: outfit.handR,
-      face: outfit.face, helmet: outfit.helmet, weapon: outfit.front, weaponScale: outfit.frontScale, shield: outfit.shield } });
-    const bow = Engine.look({ outfit: { body: outfit.body, armL: outfit.armL, armR: outfit.armR, handL: outfit.handL, handR: outfit.handR,
-      face: outfit.face, helmet: outfit.helmet, weapon: outfit.back, weaponScale: outfit.backScale } });
-    if (spear && bow) B.uniform = { spear, bow };
-  }
-
   function hurtSoldier(s, dmg) {
     if (s.dead || B.state === 'wipe') return;
-    if (Game.army.block && Math.random() < Game.army.block) {
-      addText(B.px + s.ox, s.y - 50, '막기', 'block');
-      return;
-    }
     dmg *= 1 - Game.mods.armor;
     if (s.shield > 0) {
       const a = Math.min(s.shield, dmg);
@@ -231,12 +240,10 @@ const Battle = (() => {
   }
 
   // ---------- combat helpers ----------
-  // Crit and "double chance" come from upgrades plus equipment options.
   function rollDmg(base) {
-    const A = Game.army;
-    const crit = Math.random() < A.crit;
-    const double = A.double > 0 && Math.random() < A.double;
-    return { dmg: base * rnd(0.9, 1.1) * (crit ? A.critDmg : 1) * (double ? 2 : 1), crit: crit || double };
+    const M = Game.mods;
+    const crit = Math.random() < M.crit;
+    return { dmg: base * rnd(0.9, 1.1) * (crit ? M.critDmg : 1), crit };
   }
 
   function findTarget(s) {
@@ -278,14 +285,17 @@ const Battle = (() => {
       const sp = C.proj === 'bullet' ? 700 : C.proj === 'orb' ? 280 : 400;
       const x0 = sx + 16 * d, y0 = s.y - 26 * d;
       const dist = Math.hypot(e.x - x0, e.y - y0);
-      B.projs.push({ kind: C.proj, from: 's', owner: s, x0, y0, x: x0, y: y0, tx: e.x, ty: e.y - 20, target: e, t: 0,
-        dur: Math.max(0.08, dist / sp), arc: C.proj === 'arrow' ? 26 : 0, base: soldierAtk(s), splash: C.splash || 0 });
-      sfx(Math.random() < 0.5 ? 'CombatBow1' : 'CombatBow2', 0.16);
+      B.projs.push({ kind: C.proj, from: 's', x0, y0, x: x0, y: y0, tx: e.x, ty: e.y - 20, target: e, t: 0,
+        dur: Math.max(0.08, dist / sp), arc: C.proj === 'arrow' ? 26 : 0, base: soldierAtk(s), splash: C.splash || 0, grade: s.grade });
+      if (C.proj === 'bullet') {
+        sfx(Math.random() < 0.5 ? 'CombatGun1' : 'CombatGun2', 0.18);
+        B.fx.push({ kind: 'muzzle', x: x0 + 14 * d, y: y0 + 2, t: 0, dur: 0.1 });
+      } else if (C.proj === 'arrow') sfx(s.grade >= 4 ? 'CombatCrossbow1' : (Math.random() < 0.5 ? 'CombatBow1' : 'CombatBow2'), 0.16);
+      else sfx('CombatLaser1', 0.12, 1.4);
       return;
     }
     const { dmg, crit } = rollDmg(soldierAtk(s));
     hurtEnemy(e, dmg, { crit, kb: 7, stun: C.stun });
-    lifeSteal(s, dmg);
     if (C.splash) {
       for (const o of B.enemies) {
         if (o === e || o.dead) continue;
@@ -294,11 +304,6 @@ const Battle = (() => {
     }
     B.fx.push({ kind: 'spark', x: e.x - 8, y: e.y - 24 * depth(e.y), t: 0, dur: 0.18, crit });
     sfx('CombatHit' + (1 + Math.floor(Math.random() * 4)), crit ? 0.35 : 0.22, rnd(0.9, 1.1));
-  }
-
-  function lifeSteal(s, dmg) {
-    if (!Game.army.lifesteal || s.dead) return;
-    s.hp = Math.min(s.maxHp, s.hp + dmg * Game.army.lifesteal);
   }
 
   // The front rank crashes into the orc line at the end of a charge.
@@ -386,15 +391,6 @@ const Battle = (() => {
     }
     B.camX = B.px - FRONT_X;
 
-    // Reinforcements march in on a cooldown while the formation has gaps.
-    if (B.state === 'run' && aliveCount() < SLOTS) {
-      B.reinforceT -= dt;
-      if (B.reinforceT <= 0) {
-        reinforce(Math.round(Game.mods.reinforceCount));
-        B.reinforceT = Game.mods.reinforceCd;
-      }
-    } else B.reinforceT = Game.mods.reinforceCd;
-
     updateSoldiers(dt);
     updateEnemies(dt);
     updateProjs(dt);
@@ -408,8 +404,7 @@ const Battle = (() => {
   }
 
   function updateSoldiers(dt) {
-    const aspd = Game.army.aspd * (B.aspdT > 0 ? 1 + B.aspdV : 1);
-    const regen = (B.marching ? 0.01 : 0) + Game.army.regen / 5;
+    const aspd = Game.mods.aspd * (B.aspdT > 0 ? 1 + B.aspdV : 1);
     const fighting = B.state === 'run';
     for (let l = 0; l < LANES; l++) {
       const lane = B.lanes[l];
@@ -420,7 +415,7 @@ const Battle = (() => {
         if (s.spawnT > 0) s.spawnT -= dt;
         if (s.hitT > 0) s.hitT -= dt;
         if (s.shieldT > 0) { s.shieldT -= dt; if (s.shieldT <= 0) s.shield = 0; }
-        if (regen && s.hp < s.maxHp) s.hp = Math.min(s.maxHp, s.hp + s.maxHp * regen * dt);
+        if (B.marching && s.hp < s.maxHp) s.hp = Math.min(s.maxHp, s.hp + s.maxHp * 0.01 * dt);
         s.cd -= dt * aspd;
         if (s.anim) {
           s.anim.t += dt;
@@ -532,7 +527,6 @@ const Battle = (() => {
       if (!e) return;
       const { dmg, crit } = rollDmg(p.base);
       hurtEnemy(e, dmg, { crit, kb: p.kind === 'bullet' ? 4 : 2 });
-      if (p.owner) lifeSteal(p.owner, dmg);
       if (p.kind === 'bullet') B.fx.push({ kind: 'spark', x: p.tx, y: p.ty, t: 0, dur: 0.12, crit });
       return;
     }
@@ -579,8 +573,12 @@ const Battle = (() => {
   }
 
   // ---------- skills ----------
-  // Skills grow with the army's equipment, like a spearman's blow.
-  const heroAtk = () => Game.army.spear.atk * 0.4 * Game.army.skillMult;
+  // Skills grow with the army: a better-graded phalanx casts stronger spells.
+  function heroAtk() {
+    let n = 0, m = 0;
+    for (const lane of B.lanes) for (const s of lane) { m += GRADES[s.grade].mult; n++; }
+    return 10 * Game.mods.atk * Game.mods.skill * (n ? m / n : 1);
+  }
 
   function onScreenEnemies() {
     return B.enemies.filter((e) => !e.dead && e.x - B.camX < VW - 4 && e.x - B.camX > FRONT_X - 30);
@@ -791,7 +789,7 @@ const Battle = (() => {
     if (!sk || (B.cd[id] || 0) > 0 || B.state !== 'run') return false;
     const lv = (Game.S.skills[id] && Game.S.skills[id].lv) || 1;
     if (!SKILL_FN[id](F.skillValue(sk, lv))) return false;
-    B.cd[id] = sk.cd * (1 - Game.army.skillCd);
+    B.cd[id] = sk.cd;
     const c = armyCenter();
     addText(c.x, laneY0 - 26, sk.name + '!', 'skillName', GRADES[sk.grade].color);
     return true;
@@ -970,13 +968,21 @@ const Battle = (() => {
     for (const e of B.enemies) drawList.push({ y: e.y, x: e.x, e });
     drawList.sort((a, b) => a.y - b.y || a.x - b.x);
 
-    // ground shadows first
+    // shadows + grade auras first
     for (const it of drawList) {
       const u = it.s || it.e;
       const d = depth(u.y);
       const x = it.s ? (it.dying ? u.wx : B.px + u.ox) - B.camX : u.x - B.camX;
       const sc = (u.scale || 1) * d;
       g.globalAlpha = it.dying ? Math.max(0, 1 - u.deathT / 0.9) : u.dead ? Math.max(0, 1 - u.deathT / 0.8) : 1;
+      if (it.s && !it.dying && u.grade >= 1) {
+        const col = GRADES[u.grade].color;
+        const pulse = u.grade >= 4 ? 0.15 * Math.sin(B.time * 4 + u.phase) : 0;
+        g.fillStyle = col;
+        g.globalAlpha = 0.35 + pulse;
+        g.beginPath(); g.ellipse(x, u.y, 16 * sc, 5.5 * sc, 0, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1;
+      }
       g.fillStyle = 'rgba(40,25,10,0.28)';
       g.beginPath(); g.ellipse(x, u.y, 13 * sc, 4 * sc, 0, 0, Math.PI * 2); g.fill();
     }
@@ -1002,7 +1008,7 @@ const Battle = (() => {
             g.globalAlpha = Math.min(1, q * 2);
           }
         }
-        Engine.drawLook(g, B.uniform && B.uniform[s.cls], x, y, CHAR_S / Engine.PS * d, false, pose, s.hitT > 0.07);
+        Engine.drawLook(g, s.look, x, y, CHAR_S / Engine.PS * d, false, pose, s.hitT > 0.07);
         g.globalAlpha = 1;
         if (!it.dying && s.shield > 0) {
           g.globalAlpha = 0.28 + 0.08 * Math.sin(B.time * 6 + s.phase);
@@ -1041,11 +1047,10 @@ const Battle = (() => {
     for (const it of drawList) {
       if (it.dying) continue;
       const u = it.s || it.e;
-      const L = it.s ? B.uniform && B.uniform[u.cls] : u.look;
-      if (!L || u.dead || u.hp >= u.maxHp - 0.01 || (it.e && it.e.T.boss)) continue;
+      if (!u.look || u.dead || u.hp >= u.maxHp - 0.01 || (it.e && it.e.T.boss)) continue;
       const d = depth(u.y) * (u.scale || 1);
       const x = (it.s ? B.px + u.ox : u.x) - B.camX;
-      const y = u.y + L.A.y * (CHAR_S / Engine.PS) * d - 3;
+      const y = u.y + u.look.A.y * (CHAR_S / Engine.PS) * d - 3;
       const w = 18 * d;
       g.fillStyle = 'rgba(20,10,10,0.75)';
       g.fillRect(x - w / 2 - 1, y - 1, w + 2, 4);
@@ -1262,7 +1267,6 @@ const Battle = (() => {
       let size = 10, color = '#ffffff', y = t.y - q * 22;
       if (t.kind === 'crit') { size = 14; color = '#ffd33d'; }
       else if (t.kind === 'skill') { size = 12; color = '#ffa13d'; }
-      else if (t.kind === 'block') { size = 10; color = '#a9c8ff'; }
       else if (t.kind === 'skillName') { size = 15; color = t.color; y = t.y - q * 14; }
       const pop = q < 0.12 ? 1 + (0.12 - q) * 4 : 1;
       g.globalAlpha = q > 0.7 ? (1 - q) / 0.3 : 1;
@@ -1342,26 +1346,29 @@ const Battle = (() => {
     B.enemies = []; B.projs = []; B.boss = null;
   }
 
-  // Saved as [cls, hp ratio] per file; anything that no longer fits the formation is dropped.
   function armySnapshot() {
-    return B.lanes.map((lane) => lane.map((s) => [s.cls, Math.round(s.hp / s.maxHp * 100) / 100]));
+    return B.lanes.map((lane) => lane.map((s) => [s.cls, s.grade, s.set, Math.round(s.hp / s.maxHp * 100) / 100]));
   }
 
+  // Old saves may hold other classes or a bigger formation: keep the best soldiers that fit.
   function restoreArmy(snap) {
     for (let l = 0; l < LANES; l++) B.lanes[l] = [];
-    snap.slice(0, LANES).forEach((lane, l) => {
-      for (const [cls, hp] of lane) {
-        if (!CLASSES[cls] || typeof hp !== 'number') continue;
-        const max = cls === 'spear' ? SPEAR_RANKS : RANKS - SPEAR_RANKS;
-        if (laneCount(l, cls) < max) addSoldier(cls, l, { hp: Math.max(0.2, hp) });
-      }
-    });
+    const all = [];
+    snap.forEach((lane, l) => lane.forEach(([cls, grade, set, hp]) => {
+      cls = CLASSES[cls] ? cls : LEGACY_CLASS[cls];
+      if (cls && GRADES[grade]) all.push({ cls, grade, set, hp, l });
+    }));
+    const sameShape = snap.length === LANES && snap.every((lane) => lane.length <= RANKS);
+    all.sort((a, b) => b.grade - a.grade);
+    for (const s of all.slice(0, SLOTS)) {
+      addSoldier(s.cls, s.grade, { set: s.set, hp: Math.max(0.2, s.hp), lane: sameShape ? s.l : undefined });
+    }
   }
 
   function soldiers() { return B.lanes.flat(); }
 
   return {
-    B, init, resize, update, draw, refreshSoldierStats, castSkill, startStage, reinforce, setUniform,
+    B, init, resize, update, draw, addSoldier, refreshSoldierStats, castSkill, startStage, mergeAll, mergeCount,
     armySnapshot, restoreArmy, aliveCount, soldiers, toVirtual, setBanner,
     get VH() { return VH; },
   };

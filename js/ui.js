@@ -1,5 +1,5 @@
 'use strict';
-// DOM interface: top HUD, battle overlay, forge-clone-2 equipment panel, comparison, pages, popups.
+// DOM interface: top bar, battle HUD, action bar, tab panels, popups.
 
 const UI = (() => {
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -13,21 +13,17 @@ const UI = (() => {
   const sfx = (n, v, r) => Engine.Sfx.play(n, v, r);
   const GOLD = `<img class="ci" src="${asset('assets/ui/currency-gold.png')}" alt="">`;
   const GEM = `<img class="ci" src="${asset('assets/ui/currency-gem.png')}" alt="">`;
-  const DICE = `<img class="ci" src="${asset('assets/ui/forge-token.png')}" alt="">`;
 
-  let page = 'home';
+  let tab = 'upgrade';
   let mult = 1;
   let acc = 0;
   let slowAcc = 0;
   let lastEquipSig = '';
-  let gearSig = '';
-  let deckSig = '';
-  let comparing = false;
-  let rolling = false;
+  let selectedSoldier = null;
 
   // ---------- helpers ----------
   function setText(node, v) {
-    if (node && node._v !== v) { node._v = v; node.textContent = v; }
+    if (node._v !== v) { node._v = v; node.textContent = v; }
   }
 
   // Tap fires on release; holding repeats; moving the finger (scrolling) cancels.
@@ -54,14 +50,24 @@ const UI = (() => {
     btn.addEventListener('contextmenu', (ev) => ev.preventDefault());
   }
 
-  function tap(node, fn) { node.addEventListener('click', (ev) => { Engine.Sfx.unlock(); fn(ev); }); }
+  function tap(node, fn) {
+    node.addEventListener('click', (ev) => { Engine.Sfx.unlock(); fn(ev); });
+  }
 
-  function timeText(secs) {
-    secs = Math.max(0, Math.ceil(secs));
-    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
-    if (h) return `${h}시 ${m}분`;
-    if (m) return `${m}분 ${s}초`;
-    return `${s}초`;
+  function portrait(canvas, s) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = canvas.clientWidth || 56, H = canvas.clientHeight || 56;
+    if (canvas.width !== Math.round(W * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
+    const g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    if (!s) return;
+    const C = CLASSES[s.cls];
+    const L = Engine.look({ set: s.set, face: 0, weapon: C.weapons[s.grade], shield: !!C.shield });
+    if (!L) return;
+    const sc = (H * 0.86) / -L.A.y;
+    const pose = C.role === 2 ? { arm: -1.15, wpn: 1.15 } : C.role === 3 ? { arm: -0.55, wpn: -0.75 } : { wpn: C.idle || 0 };
+    Engine.drawLook(g, L, W * 0.46, H * 0.95, sc, false, pose);
   }
 
   // ---------- toasts ----------
@@ -72,6 +78,12 @@ const UI = (() => {
     while (box.children.length > 3) box.lastChild.remove();
     setTimeout(() => t.classList.add('out'), 1700);
     setTimeout(() => t.remove(), 2100);
+  }
+
+  function summonToast(s) {
+    const G = GRADES[s.grade];
+    const w = MANIFEST.weapons[s.C.weapons[s.grade]];
+    toast(`<img class="tw" src="${asset(w.f)}" alt=""><b style="color:${G.color}">[${G.name}]</b> ${s.C.name} 합류!`, s.grade >= 3 ? 'big g' + s.grade : '');
   }
 
   // ---------- modal ----------
@@ -87,49 +99,29 @@ const UI = (() => {
   }
   function closeModal() { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; }
 
-  // ---------- item cards (forge-clone-2 ComparisonItem) ----------
-  function trendSvg(up) {
-    const tip = up ? 'M13 3 L24 22 L2 22 Z' : 'M13 23 L24 4 L2 4 Z';
-    return `<svg class="compare-trend" viewBox="0 0 26 26"><path d="${tip}" fill="${up ? 'rgb(73,196,68)' : 'rgb(235,70,70)'}" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
-  }
-
-  function statText(v) { return v < 1000 ? String(Math.round(v * 100) / 100) : fmtStat(v); }
-
-  function itemCard(item, previous, badge) {
-    if (!item) return '<div class="compare-copy"><div class="compare-stat">장착된 장비 없음</div></div>';
-    const t = Forge.tier(item);
-    const stats = [];
-    for (const [stat, label] of [[0, '피해'], [1, '생명력']]) {
-      const v = Forge.value(item, stat), pv = previous ? Forge.value(previous, stat) : 0;
-      if (!v && !pv) continue;
-      const diff = v - pv;
-      const trend = (previous || badge) && Math.abs(diff) > 0.01 ? trendSvg(diff > 0) : '';
-      stats.push(`<div class="compare-stat"><span>${statText(v)} ${label}</span>${trend}</div>`);
-    }
-    const options = item.op.map((op) => `<div class="compare-option">${Forge.optionText(op)}</div>`).join('');
-    return `<div class="compare-icon-column">
-        <div class="ui-slot compare-icon-slot tier-${t}"><img src="${asset(Forge.icon(item))}" alt=""><span class="compare-level">Lv.${item.lv}</span></div>
-        ${badge ? `<span class="compare-new-badge">${badge}</span>` : ''}</div>
-      <div class="compare-copy ${stats.length > 1 ? 'dual' : ''}">
-        <div class="compare-name tier-${t}">${Forge.name(item)}</div>${stats.join('')}${options}</div>`;
-  }
-
   // ---------- build ----------
   function init() {
+    buildActionBar();
+    buildUpgradeTab();
+    buildArmyTab();
+    buildSkillTab();
+    buildSummonTab();
     buildHud();
-    buildSkillBar();
-    buildHome();
-    buildUpgradePage();
-    buildSkillPage();
-    buildSummonPage();
 
-    for (const b of $$('#bottom-bar button')) tap(b, () => { sfx('UiTap', 0.5); switchPage(b.dataset.page); });
-    switchPage('home');
+    for (const b of $$('#nav button')) tap(b, () => { sfx('UiTap', 0.5); switchTab(b.dataset.tab); });
+    switchTab('upgrade');
 
     tap($('#btnMenu'), openSettings);
-    tap($('#btn-profile'), openStats);
-    tap($('#btnSpeed'), () => { Game.S.speed = Game.S.speed === 1 ? 2 : 1; sfx('UiTap', 0.5); updateHudButtons(); });
-    tap($('#btnSound'), () => { Game.S.sound = !Game.S.sound; Engine.Sfx.on = Game.S.sound; updateHudButtons(); });
+    tap($('#btnSpeed'), () => {
+      Game.S.speed = Game.S.speed === 1 ? 2 : 1;
+      sfx('UiTap', 0.5);
+      updateHudButtons();
+    });
+    tap($('#btnSound'), () => {
+      Game.S.sound = !Game.S.sound;
+      Engine.Sfx.on = Game.S.sound;
+      updateHudButtons();
+    });
     updateHudButtons();
     window.addEventListener('resize', onResize);
     onResize();
@@ -148,21 +140,24 @@ const UI = (() => {
     $('#btnSound').classList.toggle('off', !Game.S.sound);
   }
 
-  function switchPage(id) {
-    page = id;
-    for (const b of $$('#bottom-bar button')) b.classList.toggle('on', b.dataset.page === id);
-    for (const p of $$('#lower .page')) p.hidden = p.id !== (id === 'home' ? 'home' : 'page-' + id);
-    if (id !== 'home') hideComparison();
-    refreshPage(true);
+  function switchTab(id) {
+    tab = id;
+    for (const b of $$('#nav button')) b.classList.toggle('on', b.dataset.tab === id);
+    for (const t of $$('.tab')) t.hidden = t.id !== 'tab-' + id;
+    $('#panel').scrollTop = 0;
+    refreshTab(true);
   }
 
-  // ---------- battle HUD ----------
+  // ---------- HUD ----------
   function buildHud() {
     const pips = $('#wavePips');
     for (let i = 0; i < WAVES_PER_STAGE; i++) pips.append(el('i', i === WAVES_PER_STAGE - 1 ? 'boss' : ''));
     tap($('#btnChallenge'), () => Game.challenge());
     tap($('#questBox'), () => {
-      if (Game.claimQuest()) { const q = $('#questBox'); q.classList.remove('claim'); void q.offsetWidth; q.classList.add('claim'); }
+      if (Game.claimQuest()) {
+        const q = $('#questBox');
+        q.classList.remove('claim'); void q.offsetWidth; q.classList.add('claim');
+      }
     });
   }
 
@@ -170,8 +165,12 @@ const UI = (() => {
     const B = Battle.B;
     setText($('#stageName'), F.stageLabel(B.stage) + '  ' + F.theme(B.stage).name + (Game.S.farm ? ' (반복)' : ''));
     $('#btnChallenge').hidden = !Game.S.farm;
-    $$('#wavePips i').forEach((p, i) => { p.classList.toggle('done', i < B.wave); p.classList.toggle('cur', i === B.wave); });
-    const boss = B.boss, bb = $('#bossBar');
+    $$('#wavePips i').forEach((p, i) => {
+      p.classList.toggle('done', i < B.wave);
+      p.classList.toggle('cur', i === B.wave);
+    });
+    const boss = B.boss;
+    const bb = $('#bossBar');
     if (boss && !boss.dead && B.enemies.includes(boss)) {
       bb.hidden = false;
       setText($('.bname', bb), boss.T.name);
@@ -190,34 +189,32 @@ const UI = (() => {
     const alive = Battle.aliveCount();
     setText($('#armyCount'), `${alive}/${SLOTS}`);
     $('#armyBox').classList.toggle('low', alive < SLOTS * 0.5);
-    const cd = Game.mods.reinforceCd;
-    const full = alive >= SLOTS;
-    $('#armyBox .reinforce i').style.width = (full ? 100 : (1 - B.reinforceT / cd) * 100) + '%';
-    setText($('#reinforceText'), full ? '' : `보충 ${Math.max(0, B.reinforceT).toFixed(1)}초 · ${Math.round(Game.mods.reinforceCount)}명`);
   }
 
-  // ---------- skill bar (battle overlay) ----------
-  function buildSkillBar() {
+  // ---------- action bar ----------
+  function buildActionBar() {
     const box = $('#skillSlots');
     for (let i = 0; i < 6; i++) {
       const s = el('button', 'sslot', `<img class="sk" alt=""><div class="cdmask"></div><span class="cdt"></span><img class="lock" src="${asset('assets/ui/content-lock.png')}" alt="">`);
+      s.dataset.i = i;
       tap(s, () => {
         const id = Game.S.equip[i];
-        if (i >= Game.unlockedSlots()) { toast(F.stageLabel(SKILL_SLOT_UNLOCK[i]) + ' 도달 시 열립니다'); return; }
-        if (!id) { switchPage('skill'); return; }
-        if (!Game.S.auto) { if (Battle.castSkill(id)) sfx('UiTap', 0.4); else sfx('UiDeny', 0.4); }
-        else showSkillDetail(id);
+        if (!id) { switchTab('skill'); return; }
+        if (!Game.S.auto) {
+          if (Battle.castSkill(id)) sfx('UiTap', 0.4); else sfx('UiDeny', 0.4);
+        } else showSkillDetail(id);
       });
       box.append(s);
     }
     tap($('#btnAuto'), () => {
       Game.S.auto = !Game.S.auto;
       sfx('UiTap', 0.6);
-      toast(Game.S.auto ? '스킬 자동 사용 <b>ON</b>' : '스킬 자동 사용 <b>OFF</b> · 슬롯을 눌러 직접 사용');
+      toast(Game.S.auto ? '스킬 자동 사용 <b>ON</b>' : '스킬 자동 사용 <b>OFF</b> — 슬롯을 눌러 직접 사용');
     });
+    holdRepeat($('#btnSummon'), (repeat) => Game.summonOne(repeat) ? true : false);
   }
 
-  function updateSkillBar() {
+  function updateActionBar() {
     const S = Game.S;
     const unlocked = Game.unlockedSlots();
     const sig = S.equip.join(',') + '|' + unlocked;
@@ -238,8 +235,10 @@ const UI = (() => {
       if (!id) return;
       const cd = Battle.B.cd[id] || 0;
       const max = SKILL_BY_ID[id].cd;
-      $('.cdmask', s).style.setProperty('--p', (Math.max(0, Math.min(1, cd / max)) * 360) + 'deg');
-      setText($('.cdt', s), cd > 0.05 ? (cd >= 1 ? '' + Math.ceil(cd) : cd.toFixed(1)) : '');
+      const p = Math.max(0, Math.min(1, cd / max));
+      $('.cdmask', s).style.setProperty('--p', (p * 360) + 'deg');
+      setText($('.cdt', s), cd > 0.05 ? (cd >= 1 ? Math.ceil(cd) : cd.toFixed(1)) : '');
+      s.classList.toggle('ready', cd <= 0.05);
     });
     const autoBtn = $('#btnAuto');
     if (autoBtn._on !== S.auto) {
@@ -247,250 +246,35 @@ const UI = (() => {
       $('img', autoBtn).src = asset(S.auto ? 'assets/ui/skill-auto-on.png' : 'assets/ui/skill-auto-off.png');
       autoBtn.classList.toggle('on', S.auto);
     }
+
+    const empty = SLOTS - Battle.aliveCount();
+    const cost = Game.summonCost();
+    const btn = $('#btnSummon');
+    setText($('#summonCost'), fmt(cost));
+    const badge = $('#emptyBadge');
+    setText(badge, '' + empty);
+    badge.hidden = empty <= 0;
+    btn.classList.toggle('ready', empty > 0 && S.gold >= cost);
+    btn.classList.toggle('poor', S.gold < cost);
+    btn.classList.toggle('full', empty <= 0);
+    setText($('#summonLabel'), empty > 0 ? '병사 뽑기' : '부대 만원');
+    const hand = $('#tutHand');
+    hand.hidden = !(S.tut === 0 && empty > 0 && S.gold >= cost);
   }
 
-  // ---------- home: forge-clone-2 equipment panel ----------
-  const FACES = ['front', 'right', 'top', 'left', 'bottom', 'back']; // sword, helmet, armor, gloves, boot, ring
-  const FACE_OF_SLOT = { weapon: 0, helmet: 1, armor: 2, gloves: 3, shoes: 4, ring: 5, necklace: 5, belt: 5 };
-  const FACE_ROT = { front: [0, 0], right: [0, -90], top: [-90, 0], left: [0, 90], bottom: [90, 0], back: [0, 180] };
-  let dieRot = [0, 0];
-
-  function buildHome() {
-    const rows = $$('#equip-grid .equip-row');
-    EQ_SLOTS.forEach((slot, i) => {
-      const cell = el('div', 'equip-cell');
-      const b = el('button', 'slot ui-slot empty', `<img alt=""><span class="lv"></span><span class="empty-label">${EQ_SLOT_NAME[slot]}</span>`);
-      b.dataset.slot = slot;
-      tap(b, () => showEquipped(slot));
-      cell.append(b);
-      rows[i < 5 ? 0 : 1].append(cell);
-    });
-    const mount = el('button', 'mount-slot ui-slot', `<img class="mount-icon" src="${asset('assets/ui/mount-slot.png')}" alt=""><img class="lock" src="${asset('assets/ui/content-lock.png')}" alt="">`);
-    tap(mount, () => toast('탈것은 준비 중입니다'));
-    rows[1].append(mount);
-
-    const die = $('#die');
-    FACES.forEach((f, i) => die.append(el('div', 'face f-' + f, `<img src="${asset('assets/dice/face-' + i + '.png')}" alt="">`)));
-    die.classList.add('idle');
-
-    tap($('#btn-roll'), () => {
-      if (rolling || comparing) return;
-      if (Game.S.autoForge) { toast('자동 굴리기 중입니다'); return; }
-      const item = Game.roll();
-      if (item) playRoll(item, () => showComparison());
-    });
-    tap($('#btn-dice-level'), openResearch);
-    tap($('#btn-auto-forge'), () => Game.toggleAutoForge());
-    tap($('#pending-deck'), () => { if (!rolling) showComparison(); });
-    tap($('#btn-rank'), openLevelInfo);
-    tap($('#forge-dimmer'), hideComparison);
-    tap($('#compare-equip'), () => decide('equip'));
-    tap($('#empty-slot-equip'), () => decide('equip'));
-    tap($('#compare-sell'), () => decide('sell'));
+  function bumpBadge() {
+    const b = $('#emptyBadge');
+    b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
   }
 
-  function refreshHome() {
-    const S = Game.S, A = Game.army;
-    setText($('#player-level'), 'Lv.' + S.level);
-    const need = F.expNeed(S.level);
-    $('#player-exp i').style.width = Math.min(100, S.exp / need * 100) + '%';
-    setText($('#player-exp span'), `${fmt(S.exp)} / ${fmt(need)}`);
-    setText($('#equip-power'), `공격력 ${fmtStat(A.attack * Game.mods.atk)}  ·  체력 ${fmtStat(A.health * Game.mods.hp)}`);
-
-    const sig = EQ_SLOTS.map((s) => (S.gear[s] ? S.gear[s].id : 0)).join(',');
-    if (sig !== gearSig) {
-      gearSig = sig;
-      for (const b of $$('#equip-grid .slot')) {
-        const item = S.gear[b.dataset.slot];
-        b.className = 'slot ui-slot' + (item ? ' tier-' + Forge.tier(item) : ' empty');
-        if (item) { $('img', b).src = asset(Forge.icon(item)); setText($('.lv', b), 'Lv.' + item.lv); }
-      }
-    }
-    setText($('#dice-value'), fmt(S.dice));
-    $('#btn-roll').classList.toggle('dis', S.dice < 1 || S.pending.length >= PENDING_CAP);
-    const upgrading = S.diceUpgradeEnds > 0;
-    setText($('#dice-level-label'), '레벨 ' + S.diceLevel);
-    $('#btn-dice-level').classList.toggle('upgrading', upgrading);
-    setText($('#dice-upgrade-time'), upgrading ? timeText((S.diceUpgradeEnds - Date.now()) / 1000) : '');
-    const auto = $('#btn-auto-forge');
-    auto.classList.toggle('running', !!S.autoForge);
-    auto.classList.toggle('locked', !Game.autoForgeUnlocked());
-    $('.auto-icon', auto).src = asset(S.autoForge ? 'assets/ui/auto-forge-active.png' : 'assets/ui/auto-forge.png');
-    renderDeck();
+  function pulseGold() {
+    const p = $('#goldPill');
+    p.classList.remove('pulse'); void p.offsetWidth; p.classList.add('pulse');
   }
 
-  // Forged items waiting for a decision, as a fanned stack of tier cards.
-  function renderDeck() {
-    const S = Game.S, deck = $('#pending-deck');
-    const visible = S.pending.length > 0 && !comparing && !rolling;
-    deck.hidden = !visible;
-    const sig = S.pending.map((i) => i.id).join(',');
-    if (!visible || sig === deckSig) return;
-    deckSig = sig;
-    deck.innerHTML = '';
-    const n = S.pending.length, shown = Math.min(16, n);
-    for (let i = 0; i < shown - 1; i++) {
-      const it = S.pending[n - shown + i];
-      const c = el('span', 'pcard ui-slot tier-' + Forge.tier(it));
-      c.style.left = (8 + i * 2.7) + '%';
-      deck.append(c);
-    }
-    const top = S.pending[n - 1];
-    deck.append(el('span', 'pcard front ui-slot tier-' + Forge.tier(top), `<img src="${asset(Forge.icon(top))}" alt=""><span class="lv">Lv.${top.lv}</span>`));
-    deck.append(el('span', 'pcount', '×' + n));
-  }
-
-  // Throw the die, land on the face of the forged slot, then reveal the item on its tier plate.
-  function playRoll(item, done, quick) {
-    rolling = true;
-    const stage = $('#die-stage'), die = $('#die'), result = $('#dice-result');
-    result.hidden = true; stage.hidden = false;
-    die.classList.remove('idle');
-    const [fx, fy] = FACE_ROT[FACES[FACE_OF_SLOT[item.slot]]];
-    const end = [fx + 720 * (Math.random() < 0.5 ? 1 : -1), fy + 360 * (Math.random() < 0.5 ? 1 : -1)];
-    const frame = (t, r) => ({ transform: `translateY(${t}px) rotateX(-24deg) rotateY(32deg) rotateX(${r[0]}deg) rotateY(${r[1]}deg)` });
-    const mid = [(dieRot[0] + end[0]) / 2, (dieRot[1] + end[1]) / 2];
-    const dur = quick ? 360 : 640;
-    const anim = die.animate([frame(0, dieRot), frame(-62, mid), frame(0, end)], { duration: dur, easing: 'cubic-bezier(.3,.7,.4,1)', fill: 'forwards' });
-    if (!quick) { sfx('UiTap', 0.35, 1.3); setTimeout(() => sfx('UiTap', 0.3, 1.1), 180); setTimeout(() => sfx('UiTap', 0.3, 0.9), 360); }
-    anim.onfinish = () => {
-      dieRot = [fx, fy];
-      die.style.transform = `rotateX(-24deg) rotateY(32deg) rotateX(${fx}deg) rotateY(${fy}deg)`;
-      anim.cancel();
-      stage.hidden = true;
-      result.className = 'ui-slot tier-' + Forge.tier(item);
-      const better = Forge.improves(item, Game.S.gear[item.slot]);
-      result.classList.toggle('better', better);
-      $('img', result).src = asset(Forge.icon(item));
-      $('span', result).textContent = 'Lv.' + item.lv;
-      result.hidden = false;
-      if (!quick) sfx(better ? 'UiReveal' : 'UiConfirm', better ? 0.55 : 0.35);
-      setTimeout(() => { rolling = false; if (done) done(); }, quick ? 260 : 380);
-    };
-  }
-
-  function resetDie() {
-    $('#dice-result').hidden = true;
-    $('#die-stage').hidden = false;
-    $('#die').classList.add('idle');
-    $('#die').style.transform = '';
-    dieRot = [0, 0];
-  }
-
-  function showComparison() {
-    const S = Game.S;
-    const incoming = S.pending[S.pending.length - 1];
-    if (!incoming || page !== 'home') { hideComparison(); return; }
-    comparing = true;
-    const current = S.gear[incoming.slot];
-    $('#forge-layer').hidden = false;
-    $('#forge-empty-slot').hidden = !!current;
-    $('#forge-comparison').hidden = !current;
-    if (!current) {
-      $('#empty-slot-item').innerHTML = itemCard(incoming, null, '새로운!');
-    } else {
-      $('#compare-current').innerHTML = itemCard(current, incoming);
-      $('#compare-incoming').innerHTML = itemCard(incoming, current, '새로운!');
-    }
-    renderDeck();
-  }
-
-  function hideComparison() {
-    comparing = false;
-    $('#forge-layer').hidden = true;
-    deckSig = '';
-    renderDeck();
-  }
-
-  function decide(kind) {
-    const S = Game.S;
-    const incoming = S.pending[S.pending.length - 1];
-    if (!incoming) { hideComparison(); return; }
-    if (kind === 'equip') {
-      const sold = Game.equipPending(incoming.id);
-      const slotBtn = $(`#equip-grid .slot[data-slot="${incoming.slot}"]`);
-      slotBtn.classList.remove('flash'); void slotBtn.offsetWidth; slotBtn.classList.add('flash');
-      sfx('UiLevelUp', 0.5);
-      if (sold) toast(`${GOLD} +${fmt(sold.gold)} · 이전 장비 판매`);
-    } else {
-      const r = Game.sellPending(incoming.id);
-      sfx('UiCoins', 0.5);
-      toast(`${GOLD} +${fmt(r.gold)} · EXP +${SELL_EXP}`);
-    }
-    resetDie();
-    gearSig = '';
-    if (S.pending.length) showComparison(); else hideComparison();
-    refreshHome();
-  }
-
-  // Auto forge: kept upgrades open the comparison; the rest flash and get sold.
-  function autoResult(item, kept) {
-    playRoll(item, () => {
-      if (kept) { showComparison(); return; }
-      setTimeout(() => { if (!rolling && !Game.S.pending.length) resetDie(); }, 300);
-    }, true);
-  }
-
-  function showEquipped(slot) {
-    const item = Game.S.gear[slot];
-    if (!item) { toast('주사위를 굴려 ' + EQ_SLOT_NAME[slot] + '을(를) 얻으세요'); return; }
-    openModal(`<h2 class="mtitle">${EQ_SLOT_NAME[slot]}</h2><div class="comparison-item equipped-card">${itemCard(item, null, '장착됨')}</div>
-      <p class="hint">${AGE_NAMES[item.age]} 장비 · 판매가 ${fmt(F.sellGold(item, Battle.B.stage) * Game.mods.gold)} 골드</p>`, { cls: 'small' });
-  }
-
-  function openResearch() {
-    const S = Game.S;
-    const L = S.diceLevel;
-    const odds = EQUIP.odds[L - 1], next = EQUIP.odds[Math.min(L, EQUIP.odds.length - 1)];
-    const rows = odds.map((p, age) => {
-      const np = next[age];
-      if (!p && !np) return '';
-      const up = L < DICE_LEVEL_MAX && np > p ? ` <span class="up">→ ${(np * 100).toFixed(2).replace(/\.?0+$/, '')}%</span>` : '';
-      return `<div class="prob-row tier-${age + 1}"><span>${AGE_NAMES[age]}</span><b>${(p * 100).toFixed(2).replace(/\.?0+$/, '')}%${up}</b></div>`;
-    }).join('');
-    const upgrading = S.diceUpgradeEnds > 0;
-    const maxed = L >= DICE_LEVEL_MAX;
-    const cost = F.diceUpgradeCost(L), secs = F.diceUpgradeTime(L);
-    const remain = upgrading ? (S.diceUpgradeEnds - Date.now()) / 1000 : 0;
-    const sheet = openModal(`<h2 class="mtitle">주사위 레벨 ${L}</h2>
-      <p class="hint">주사위 레벨이 오르면 더 높은 시대의 장비가 나옵니다</p>
-      <div class="prob">${rows}</div>
-      ${maxed ? '<p class="hint">최고 레벨입니다</p>' : upgrading
-        ? `<p class="desc center">레벨 ${L + 1}로 업그레이드 중 · 남은 시간 <b id="rsRemain">${timeText(remain)}</b></p>
-           <div class="mbtns"><button class="btn ui-button gold" id="rsSkip">${GEM}${F.diceSkipGems(remain)} 즉시 완료</button></div>`
-        : `<div class="research-cost"><span>비용 ${GOLD}<b>${fmt(cost)}</b></span><span>소요 시간 <b>${timeText(secs)}</b></span></div>
-           <div class="mbtns"><button class="btn ui-button ${S.gold < cost ? 'dis' : ''}" id="rsGo">레벨 ${L + 1} 업그레이드</button></div>`}`, { cls: 'small' });
-    const go = $('#rsGo', sheet);
-    if (go) tap(go, () => { if (Game.diceUpgrade()) openResearch(); });
-    const skip = $('#rsSkip', sheet);
-    if (skip) tap(skip, () => { if (Game.diceSkip()) closeModal(); });
-  }
-
-  function openLevelInfo() {
-    const S = Game.S;
-    openModal(`<h2 class="mtitle">Lv.${S.level}</h2>
-      <p class="desc center">레벨마다 공격력과 체력이 2%씩 오릅니다<br>현재 보너스 <b>+${Math.round((F.levelBonus(S.level) - 1) * 100)}%</b></p>
-      <p class="hint">장비를 판매하면 경험치 ${SELL_EXP}을 얻습니다 · 다음 레벨까지 ${fmt(F.expNeed(S.level) - S.exp)}</p>`, { cls: 'small' });
-  }
-
-  function openStats() {
-    const A = Game.army, M = Game.mods;
-    const o = A.opts;
-    const line = (k, v) => `<div class="setrow"><span>${k}</span><b>${v}</b></div>`;
-    const optLines = Object.keys(EQUIP.options).filter((k) => o[k] > 0)
-      .map((k) => line(EQUIP.options[k][2], '+' + (Math.round(o[k] * 1000) / 10) + '%')).join('');
-    openModal(`<h2 class="mtitle">부대 능력치</h2>
-      ${line('공격력', fmtStat(A.attack * M.atk))}${line('체력', fmtStat(A.health * M.hp))}
-      ${line('창방패병 1명 공격 / 체력', `${fmtStat(A.spear.atk)} / ${fmtStat(A.spear.hp)}`)}
-      ${line('궁수 1명 공격 / 체력', `${fmtStat(A.bow.atk)} / ${fmtStat(A.bow.hp)}`)}
-      ${line('치명타 확률', fmtPct(A.crit))}${line('치명타 피해', fmtPct(A.critDmg))}
-      ${optLines || '<p class="hint">장비 옵션은 중세 시대 장비부터 붙습니다</p>'}`, { cls: 'small' });
-  }
-
-  // ---------- upgrade page ----------
-  function buildUpgradePage() {
-    const t = $('#page-upgrade');
-    t.classList.add('scroll');
+  // ---------- upgrade tab ----------
+  function buildUpgradeTab() {
+    const t = $('#tab-upgrade');
     t.innerHTML = `<div class="tabhead"><h2>능력치 강화</h2><div class="seg" id="multSeg">
       <button data-m="1" class="on">x1</button><button data-m="10">x10</button><button data-m="max">MAX</button></div></div>
       <div class="list" id="upList"></div>
@@ -499,21 +283,21 @@ const UI = (() => {
       mult = b.dataset.m === 'max' ? 'max' : +b.dataset.m;
       $$('#multSeg button', t).forEach((x) => x.classList.toggle('on', x === b));
       sfx('UiTap', 0.4);
-      refreshPage(true);
+      refreshTab(true);
     });
     const list = $('#upList', t);
     for (const u of UPGRADES) {
       const row = el('div', 'row', `
         <div class="ico ${u.tile ? 'tile' : ''}"><img src="${asset(u.icon)}" alt=""></div>
         <div class="info"><div class="nm">${u.name} <span class="lv"></span></div><div class="val"></div></div>
-        <button class="buy ui-button"><span class="cost">${GOLD}<span class="cv"></span></span><span class="lbl">강화</span></button>`);
+        <button class="buy"><span class="cost">${GOLD}<span class="cv"></span></span><span class="lbl">강화</span></button>`);
       row.dataset.id = u.id;
       list.append(row);
       holdRepeat($('.buy', row), () => Game.buyUpgrade(u.id, mult));
     }
   }
 
-  function refreshUpgradePage() {
+  function refreshUpgradeTab() {
     for (const row of $$('#upList .row')) {
       const u = UPGRADE_BY_ID[row.dataset.id];
       const lv = Game.S.upg[u.id] || 0;
@@ -528,24 +312,107 @@ const UI = (() => {
     }
   }
 
-  // ---------- skill page ----------
-  function buildSkillPage() {
-    const t = $('#page-skill');
-    t.classList.add('scroll');
+  // ---------- army tab ----------
+  function buildArmyTab() {
+    const t = $('#tab-army');
+    t.innerHTML = `<div class="tabhead"><h2>방진 편성</h2><div class="armystat"><img src="${asset('assets/ui/combat-power-small.png')}" alt=""><b id="armyPower">0</b></div></div>
+      <div class="gradebar" id="gradeBar"></div>
+      <div class="formation-wrap"><div class="flabel"><span>◀ 후열</span><span>전열 ▶</span></div><div class="formation" id="formation"></div></div>
+      <div class="sinfo" id="soldierInfo"><p class="hint">병사를 눌러 정보를 확인하세요</p></div>
+      <div class="armybtns"><button class="btn purple" id="btnMerge"><img class="ci" src="${asset('assets/vfx/sparkle.png')}" alt=""><span>합성</span></button>
+        <button class="btn gold" id="btnFill">${GOLD}<span>빈자리 모두 보충</span></button></div>
+      <p class="hint">같은 등급 병사 3명을 합성하면 한 단계 높은 등급 병사 1명이 됩니다. 남는 자리는 뽑기로 채우세요!</p>`;
+    const grid = $('#formation', t);
+    grid.style.setProperty('--ranks', RANKS);
+    for (let l = 0; l < LANES; l++) {
+      for (let c = 0; c < RANKS; c++) {
+        const cell = el('button', 'cell', '<canvas></canvas><i class="hp"><b></b></i>');
+        cell.dataset.lane = l;
+        cell.dataset.rank = RANKS - 1 - c;
+        tap(cell, () => {
+          const s = Battle.B.lanes[l].find((o) => o.rank === RANKS - 1 - c);
+          selectedSoldier = s || null;
+          sfx('UiTap', 0.4);
+          refreshArmyTab(true);
+        });
+        grid.append(cell);
+      }
+    }
+    tap($('#btnFill', t), () => Game.summonFill());
+    tap($('#btnMerge', t), () => { Game.merge(); refreshArmyTab(true); });
+  }
+
+  function refreshArmyTab(force) {
+    const B = Battle.B;
+    let total = 0;
+    const counts = GRADES.map(() => 0);
+    for (const cell of $$('#formation .cell')) {
+      const s = B.lanes[+cell.dataset.lane].find((o) => o.rank === +cell.dataset.rank);
+      const sid = s ? s.id : 0;
+      if (s) counts[s.grade]++;
+      if (force || cell._sid !== sid) {
+        cell._sid = sid;
+        cell.className = 'cell' + (s ? ' g' + s.grade : ' empty');
+        portrait($('canvas', cell), s);
+      }
+      if (s) $('.hp b', cell).style.width = Math.max(0, s.hp / s.maxHp * 100) + '%';
+      cell.classList.toggle('sel', !!s && s === selectedSoldier);
+    }
+    for (const n of counts) total += n;
+    $('#gradeBar').innerHTML = `<span class="tot">병력 <b>${total}</b>/${SLOTS}</span>` +
+      counts.map((n, i) => n ? `<span class="chip" style="--gc:${GRADES[i].color}">${GRADES[i].name} ${n}</span>` : '').join('');
+    setText($('#armyPower'), fmt(Game.power()));
+    const info = $('#soldierInfo');
+    const s = selectedSoldier;
+    if (s && (s.dead || !Battle.soldiers().includes(s))) selectedSoldier = null;
+    if (selectedSoldier) {
+      const G = GRADES[s.grade];
+      const atk = s.C.atk * G.mult * Game.mods.atk;
+      const roleText = ['전열 근접', '앞열 · 긴 창 찌르기', '뒷열 · 원거리 사격', '원거리 범위'][s.C.role];
+      if (info._sid !== s.id || force) {
+        info._sid = s.id;
+        info.innerHTML = `<canvas class="big"></canvas><div class="sd">
+          <div class="sn"><span class="gtag" style="--gc:${G.color}">${G.name}</span> ${s.C.name}</div>
+          <div class="ss">공격력 <b class="sa"></b> · 체력 <b class="sh"></b></div>
+          <div class="ss">공격 간격 ${s.C.spd.toFixed(2)}초 · ${roleText}${s.C.splash ? ' · 범위' : ''}${s.C.stun ? ' · 기절' : ''}</div></div>`;
+        portrait($('canvas', info), s);
+      }
+      setText($('.sa', info), fmt(atk));
+      setText($('.sh', info), `${fmt(Math.max(0, s.hp))}/${fmt(s.maxHp)}`);
+    } else if (info._sid !== 0) {
+      info._sid = 0;
+      info.innerHTML = '<p class="hint">병사를 눌러 정보를 확인하세요 · 창방패병은 앞열부터, 궁수는 항상 맨 뒷열에 배치됩니다</p>';
+    }
+    const cost = Game.summonCost();
+    const empty = SLOTS - Battle.aliveCount();
+    const n = Math.min(empty, Math.floor(Game.S.gold / cost));
+    $('#btnFill span').textContent = empty ? `빈자리 ${empty}칸 보충 (${n}명)` : '부대 만원';
+    $('#btnFill').classList.toggle('dis', !n);
+    const m = Battle.mergeCount();
+    $('#btnMerge span').textContent = m ? `합성 ${m}회 가능` : '합성';
+    $('#btnMerge').classList.toggle('dis', !m);
+  }
+
+  // ---------- skill tab ----------
+  function buildSkillTab() {
+    const t = $('#tab-skill');
     t.innerHTML = `<div class="tabhead"><h2>스킬 장착</h2><span class="sub">자동 사용 · 쿨타임마다 발동</span></div>
       <div class="equiprow" id="equipRow"></div>
-      <div class="tabhead"><h2>보유 스킬</h2><button class="btn small ui-button" id="btnLvAll">일괄 강화</button></div>
+      <div class="tabhead"><h2>보유 스킬</h2><button class="btn green small" id="btnLvAll">일괄 강화</button></div>
       <div class="skillgrid" id="skillGrid"></div>`;
     const row = $('#equipRow', t);
     for (let i = 0; i < 6; i++) {
       const s = el('button', 'eslot', '<img class="sk" alt=""><span class="lk"></span>');
-      tap(s, () => { const id = Game.S.equip[i]; if (id) showSkillDetail(id); });
+      tap(s, () => {
+        const id = Game.S.equip[i];
+        if (id) showSkillDetail(id);
+      });
       row.append(s);
     }
     const grid = $('#skillGrid', t);
     for (const sk of SKILLS) {
       const c = el('button', 'scard', `<div class="art"><img src="${asset('assets/skills/' + sk.id + '.png')}" alt=""></div>
-        <div class="sname">${sk.name}</div><div class="slv"></div><div class="bar"><i></i><span></span></div><em class="eq">장착</em>`);
+        <div class="sname">${sk.name}</div><div class="slv"></div><div class="sbar"><i></i><span></span></div><em class="eq">장착</em>`);
       c.dataset.id = sk.id;
       c.style.setProperty('--gc', GRADES[sk.grade].color);
       tap(c, () => showSkillDetail(sk.id));
@@ -554,11 +421,11 @@ const UI = (() => {
     tap($('#btnLvAll', t), () => {
       if (Game.levelAllSkills()) { sfx('UiLevelUp', 0.6); toast('스킬 일괄 강화 완료!'); }
       else { sfx('UiDeny', 0.5); toast('강화할 수 있는 스킬이 없습니다'); }
-      refreshPage(true);
+      refreshTab(true);
     });
   }
 
-  function refreshSkillPage() {
+  function refreshSkillTab() {
     const S = Game.S;
     const unlocked = Game.unlockedSlots();
     $$('#equipRow .eslot').forEach((s, i) => {
@@ -571,21 +438,23 @@ const UI = (() => {
     });
     let canLv = false;
     for (const c of $$('#skillGrid .scard')) {
-      const id = c.dataset.id, own = S.skills[id];
+      const id = c.dataset.id;
+      const own = S.skills[id];
       c.classList.toggle('owned', !!own);
       c.classList.toggle('equipped', S.equip.includes(id));
       if (own) {
-        const need = F.skillNeed(own.lv), maxed = own.lv >= SKILL_MAX_LV;
+        const need = F.skillNeed(own.lv);
+        const maxed = own.lv >= SKILL_MAX_LV;
         $('.slv', c).textContent = 'Lv.' + own.lv;
-        $('.bar i', c).style.width = maxed ? '100%' : Math.min(100, own.n / need * 100) + '%';
-        $('.bar span', c).textContent = maxed ? 'MAX' : `${own.n}/${need}`;
+        $('.sbar i', c).style.width = maxed ? '100%' : Math.min(100, own.n / need * 100) + '%';
+        $('.sbar span', c).textContent = maxed ? 'MAX' : `${own.n}/${need}`;
         const up = !maxed && own.n >= need;
         c.classList.toggle('canup', up);
         if (up) canLv = true;
       } else {
         $('.slv', c).textContent = '미보유';
-        $('.bar span', c).textContent = '';
-        $('.bar i', c).style.width = '0%';
+        $('.sbar span', c).textContent = '';
+        $('.sbar i', c).style.width = '0%';
         c.classList.remove('canup');
       }
     }
@@ -593,8 +462,12 @@ const UI = (() => {
   }
 
   function showSkillDetail(id) {
-    const sk = SKILL_BY_ID[id], own = Game.S.skills[id], G = GRADES[sk.grade];
+    const sk = SKILL_BY_ID[id];
+    const own = Game.S.skills[id];
+    const G = GRADES[sk.grade];
     const lv = own ? own.lv : 1;
+    const v = F.skillValue(sk, lv);
+    const nv = F.skillValue(sk, lv + 1);
     const equipped = Game.S.equip.includes(id);
     const need = F.skillNeed(lv);
     const sheet = openModal(`
@@ -602,105 +475,149 @@ const UI = (() => {
         <div class="skart"><img src="${asset('assets/skills/' + id + '.png')}" alt=""></div>
         <div class="skt"><span class="gtag" style="--gc:${G.color}">${G.name}</span><h3>${sk.name}</h3><p>${own ? 'Lv.' + lv : '미보유'} · 쿨타임 ${sk.cd}초</p></div>
       </div>
-      <p class="desc">${sk.desc(F.skillValue(sk, lv))}</p>
-      ${own && lv < SKILL_MAX_LV ? `<p class="next">다음 레벨: ${sk.desc(F.skillValue(sk, lv + 1))}</p>` : ''}
+      <p class="desc">${sk.desc(v)}</p>
+      ${own && lv < SKILL_MAX_LV ? `<p class="next">다음 레벨: ${sk.desc(nv)}</p>` : ''}
       <div class="mbtns">
-        ${own ? `<button class="btn ui-button ${equipped ? 'sell-button' : ''}" id="mEquip">${equipped ? '해제' : '장착'}</button>
-        <button class="btn ui-button gold ${own.n >= need && lv < SKILL_MAX_LV ? '' : 'dis'}" id="mLv">강화 (${own.n}/${need})</button>`
+        ${own ? `<button class="btn ${equipped ? 'gray' : 'green'}" id="mEquip">${equipped ? '해제' : '장착'}</button>
+        <button class="btn gold ${own.n >= need && lv < SKILL_MAX_LV ? '' : 'dis'}" id="mLv">강화 (${own.n}/${need})</button>`
         : '<p class="hint">스킬 소환에서 획득할 수 있습니다</p>'}
       </div>`, { cls: 'small' });
     const eq = $('#mEquip', sheet);
     if (eq) tap(eq, () => {
-      if (Game.toggleEquip(id) === 'full') { toast('빈 슬롯이 없습니다. 장착 중인 스킬을 먼저 해제하세요'); sfx('UiDeny', 0.5); return; }
-      sfx('UiConfirm', 0.5); closeModal(); refreshPage(true);
+      const r = Game.toggleEquip(id);
+      if (r === 'full') { toast('빈 슬롯이 없습니다. 장착 중인 스킬을 먼저 해제하세요'); sfx('UiDeny', 0.5); return; }
+      sfx('UiConfirm', 0.5);
+      closeModal(); refreshTab(true);
     });
     const lvb = $('#mLv', sheet);
-    if (lvb) tap(lvb, () => { if (Game.levelSkill(id)) { sfx('UiLevelUp', 0.6); showSkillDetail(id); refreshPage(true); } else sfx('UiDeny', 0.5); });
+    if (lvb) tap(lvb, () => {
+      if (Game.levelSkill(id)) { sfx('UiLevelUp', 0.6); showSkillDetail(id); refreshTab(true); }
+      else sfx('UiDeny', 0.5);
+    });
   }
 
-  // ---------- summon page ----------
-  function buildSummonPage() {
-    const t = $('#page-summon');
-    t.classList.add('scroll');
+  // ---------- summon tab ----------
+  function buildSummonTab() {
+    const t = $('#tab-summon');
     t.innerHTML = `
-      <div class="bigcard">
+      <div class="bigcard recruit">
+        <div class="bc-head"><img src="${asset('assets/ui/mercenary-contract.png')}" alt=""><div><h3>병사 모집</h3>
+          <p>모집 <b id="rLv">Lv.1</b> · 모집할수록 고급 병사 확률 증가</p><div class="xpbar"><i id="rXp"></i><span id="rXpT"></span></div></div></div>
+        <div class="odds" id="rOdds"></div>
+        <div class="bc-btns"><button class="btn gold" id="sOne">${GOLD}<span id="sOneC"></span><small>1회 모집</small></button>
+          <button class="btn orange" id="sFill">${GOLD}<span id="sFillC"></span><small id="sFillL">빈자리 보충</small></button></div>
+      </div>
+      <div class="bigcard skills">
         <div class="bc-head"><img src="${asset('assets/ui/forge-crystal.png')}" alt=""><div><h3>스킬 소환</h3>
           <p>장착한 스킬은 전투 중 자동으로 발동합니다</p></div></div>
-        <div class="odds">${SKILL_ODDS.map((p, i) => `<span class="chip" style="--gc:${GRADES[i].color}">${GRADES[i].name} ${p}%</span>`).join('')}</div>
-        <div class="bc-btns"><button class="btn ui-button" id="kOne">${GEM}<span>${SKILL_COST.one}</span><small>1회 소환</small></button>
-          <button class="btn ui-button gold" id="kTen">${GEM}<span>${SKILL_COST.ten}</span><small>10회 소환</small></button></div>
+        <div class="odds" id="kOdds"></div>
+        <div class="bc-btns"><button class="btn purple" id="kOne">${GEM}<span>${SKILL_COST.one}</span><small>1회 소환</small></button>
+          <button class="btn purple strong" id="kTen">${GEM}<span>${SKILL_COST.ten}</span><small>10회 소환</small></button></div>
       </div>
-      <div class="bigcard">
-        <div class="bc-head"><img src="${asset('assets/ui/forge-token.png')}" alt=""><div><h3>주사위</h3>
-          <p>오크를 쓰러뜨리면 주사위가 떨어집니다. 장비 화면에서 굴려 새 장비를 얻으세요</p></div></div>
-      </div>`;
+      <div class="bigcard classes"><h3>병종 안내</h3><div class="classlist">${CLASS_IDS.map((c) => {
+        const C = CLASSES[c];
+        return `<div class="cl"><img src="${asset(MANIFEST.weapons[C.weapons[2]].f)}" alt=""><b>${C.name}</b><span>${['전열 근접', '앞열 · 창 찌르기', '뒷열 · 활 사격', '범위 마법'][C.role]}</span></div>`;
+      }).join('')}</div></div>`;
+    holdRepeat($('#sOne', t), (repeat) => Game.summonOne(repeat) ? true : false);
+    tap($('#sFill', t), () => Game.summonFill());
     tap($('#kOne', t), () => Game.skillSummon(1));
     tap($('#kTen', t), () => Game.skillSummon(10));
+    $('#kOdds', t).innerHTML = SKILL_ODDS.map((p, i) => `<span class="chip" style="--gc:${GRADES[i].color}">${GRADES[i].name} ${p}%</span>`).join('');
   }
 
-  function refreshSummonPage() {
+  function refreshSummonTab() {
+    const R = Game.S.recruit;
+    const lv = R.lv;
+    const need = RECRUIT_XP[lv];
+    setText($('#rLv'), 'Lv.' + (lv + 1));
+    $('#rXp').style.width = need ? Math.min(100, R.xp / need * 100) + '%' : '100%';
+    setText($('#rXpT'), need ? `${R.xp}/${need}` : 'MAX');
+    const odds = RECRUIT_ODDS[Math.min(lv, RECRUIT_ODDS.length - 1)];
+    const sig = 'o' + lv;
+    const ro = $('#rOdds');
+    if (ro._sig !== sig) {
+      ro._sig = sig;
+      ro.innerHTML = odds.map((p, i) => p ? `<span class="chip" style="--gc:${GRADES[i].color}">${GRADES[i].name} ${p}%</span>` : '').join('');
+    }
+    const cost = Game.summonCost();
+    const empty = SLOTS - Battle.aliveCount();
+    const n = Math.min(empty, Math.floor(Game.S.gold / cost));
+    setText($('#sOneC'), fmt(cost));
+    setText($('#sFillC'), fmt(cost * Math.max(1, n)));
+    setText($('#sFillL'), `빈자리 보충 (${n}명)`);
+    $('#sOne').classList.toggle('dis', !empty || Game.S.gold < cost);
+    $('#sFill').classList.toggle('dis', !n);
     $('#kOne').classList.toggle('dis', Game.S.gems < SKILL_COST.one);
     $('#kTen').classList.toggle('dis', Game.S.gems < SKILL_COST.ten);
   }
 
-  function refreshPage(force) {
-    if (page === 'home') refreshHome();
-    else if (page === 'upgrade') refreshUpgradePage();
-    else if (page === 'skill') refreshSkillPage();
-    else if (page === 'summon') refreshSummonPage();
+  function refreshTab(force) {
+    if (tab === 'upgrade') refreshUpgradeTab();
+    else if (tab === 'army') refreshArmyTab(force);
+    else if (tab === 'skill') refreshSkillTab();
+    else if (tab === 'summon') refreshSummonTab();
   }
 
-  // ---------- results / popups ----------
+  // ---------- results ----------
   function showSkillResults(res) {
     const cards = res.map((r, i) => {
       const G = GRADES[r.sk.grade];
-      return `<div class="rcard g${r.sk.grade}" style="--gc:${G.color}">
+      return `<div class="rcard g${r.sk.grade}" style="--gc:${G.color};--d:${i * 0.12}s">
         <div class="inner"><div class="back"><img src="${asset('assets/ui/forge-card-back.png')}" alt=""></div>
         <div class="front">${r.sk.grade >= 4 ? `<img class="flare" src="${asset('assets/ui/rank-flare.png')}" alt="">` : ''}
           <img class="ic" src="${asset('assets/skills/' + r.sk.id + '.png')}" alt=""><b>${r.sk.name}</b><span>${r.isNew ? 'NEW!' : '+1'}</span></div></div></div>`;
     }).join('');
     const again = res.length === 10 ? SKILL_COST.ten : SKILL_COST.one * res.length;
     const sheet = openModal(`<h2 class="mtitle">스킬 소환 결과</h2><div class="rgrid n${res.length}">${cards}</div>
-      <div class="mbtns"><button class="btn ui-button" id="mOk">확인</button>
-      <button class="btn ui-button gold ${Game.S.gems < again ? 'dis' : ''}" id="mAgain">${GEM}${again} 다시 소환</button></div>`, { cls: 'results', locked: true, noClose: true });
-    $$('.rcard', sheet).forEach((c, i) => setTimeout(() => {
+      <div class="mbtns"><button class="btn green" id="mOk">확인</button>
+      <button class="btn purple ${Game.S.gems < again ? 'dis' : ''}" id="mAgain">${GEM}${again} 다시 소환</button></div>`, { cls: 'results', locked: true, noClose: true });
+    const cardsEl = $$('.rcard', sheet);
+    cardsEl.forEach((c, i) => setTimeout(() => {
       c.classList.add('open');
       const gr = +c.className.match(/g(\d)/)[1];
       sfx(gr >= 3 ? 'UiReveal' : 'UiTap', gr >= 3 ? 0.6 : 0.35, 1 + i * 0.03);
     }, 250 + i * 140));
-    tap($('#mOk', sheet), () => { closeModal(); refreshPage(true); });
-    tap($('#mAgain', sheet), () => Game.skillSummon(res.length));
+    tap($('#mOk', sheet), () => { closeModal(); refreshTab(true); });
+    tap($('#mAgain', sheet), () => { Game.skillSummon(res.length); });
   }
 
-  function offlinePopup(secs, gold, dice, claim) {
+  function showFillResults(list) {
+    if (!list.length) return;
+    const counts = GRADES.map(() => 0);
+    for (const s of list) counts[s.grade]++;
+    const parts = counts.map((n, i) => n ? `<b style="color:${GRADES[i].color}">${GRADES[i].name} ${n}</b>` : '').filter(Boolean).join(' · ');
+    toast(`병사 ${list.length}명 합류! ${parts}`, list.some((s) => s.grade >= 3) ? 'big g' + Math.max(...list.map((s) => s.grade)) : '');
+  }
+
+  function offlinePopup(secs, gold, claim) {
     const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
     const sheet = openModal(`<h2 class="mtitle">방치 보상</h2>
       <div class="chest"></div>
       <p class="desc center">부대가 ${h ? h + '시간 ' : ''}${m}분 동안 오크를 사냥했습니다</p>
-      <div class="reward"><span>${GOLD}<b>+${fmt(gold)}</b></span><span>${DICE}<b>+${fmt(dice)}</b></span></div>
-      <div class="mbtns"><button class="btn ui-button gold" id="mClaim">받기</button></div>`, { cls: 'small', locked: true, noClose: true });
+      <div class="reward">${GOLD}<b>+${fmt(gold)}</b></div>
+      <div class="mbtns"><button class="btn gold" id="mClaim">받기</button></div>`, { cls: 'small', locked: true, noClose: true });
     tap($('#mClaim', sheet), (ev) => {
       ev.currentTarget.disabled = true;
       claim();
       $('.chest', sheet).classList.add('open');
-      sfx('UiChest', 0.6); sfx('UiCoins', 0.7);
+      sfx('UiChest', 0.6);
+      sfx('UiCoins', 0.7);
       setTimeout(closeModal, 700);
     });
   }
 
   function openSettings() {
-    const S = Game.S;
     const sheet = openModal(`<h2 class="mtitle">설정</h2>
-      <div class="setrow"><span>효과음</span><button class="btn small ui-button ${S.sound ? '' : 'sell-button'}" id="mSnd">${S.sound ? '켜짐' : '꺼짐'}</button></div>
-      <div class="setrow"><span>전투 속도</span><button class="btn small ui-button" id="mSpd">x${S.speed}</button></div>
-      <div class="setrow"><span>치트: 무한 골드·보석·주사위</span><button class="btn small ui-button ${S.cheat ? 'gold' : 'sell-button'}" id="mCheat">${S.cheat ? '켜짐' : '꺼짐'}</button></div>
-      <div class="setrow"><span>최고 스테이지</span><b>${F.stageLabel(S.maxStage)}</b></div>
-      <div class="setrow"><span>처치한 오크</span><b>${fmt(S.stats.kills)}</b></div>
-      <div class="setrow"><span>굴린 주사위</span><b>${fmt(S.stats.forges)}</b></div>
-      <div class="mbtns"><button class="btn small ui-button sell-button" id="mReset">데이터 초기화</button></div>`, { cls: 'small' });
-    tap($('#mSnd', sheet), () => { S.sound = !S.sound; Engine.Sfx.on = S.sound; updateHudButtons(); openSettings(); });
-    tap($('#mSpd', sheet), () => { S.speed = S.speed === 1 ? 2 : 1; updateHudButtons(); openSettings(); });
-    tap($('#mCheat', sheet), () => { S.cheat = !S.cheat; sfx('UiTap', 0.5); openSettings(); });
+      <div class="setrow"><span>효과음</span><button class="btn small ${Game.S.sound ? 'green' : 'gray'}" id="mSnd">${Game.S.sound ? '켜짐' : '꺼짐'}</button></div>
+      <div class="setrow"><span>전투 속도</span><button class="btn small ${Game.S.speed > 1 ? 'green' : 'gray'}" id="mSpd">x${Game.S.speed}</button></div>
+      <div class="setrow"><span>치트: 무한 골드·보석</span><button class="btn small ${Game.S.cheat ? 'green' : 'gray'}" id="mCheat">${Game.S.cheat ? '켜짐' : '꺼짐'}</button></div>
+      <div class="setrow"><span>최고 스테이지</span><b>${F.stageLabel(Game.S.maxStage)}</b></div>
+      <div class="setrow"><span>처치한 오크</span><b>${fmt(Game.S.stats.kills)}</b></div>
+      <div class="setrow"><span>모집한 병사</span><b>${fmt(Game.S.stats.summons)}</b></div>
+      <div class="mbtns"><button class="btn red small" id="mReset">데이터 초기화</button></div>`, { cls: 'small' });
+    tap($('#mSnd', sheet), () => { Game.S.sound = !Game.S.sound; Engine.Sfx.on = Game.S.sound; updateHudButtons(); openSettings(); });
+    tap($('#mSpd', sheet), () => { Game.S.speed = Game.S.speed === 1 ? 2 : 1; updateHudButtons(); openSettings(); });
+    tap($('#mCheat', sheet), () => { Game.S.cheat = !Game.S.cheat; openSettings(); });
     let armed = false;
     tap($('#mReset', sheet), (ev) => {
       if (!armed) { armed = true; ev.currentTarget.textContent = '정말 초기화할까요? 한 번 더 누르세요'; return; }
@@ -708,12 +625,11 @@ const UI = (() => {
     });
   }
 
-  function pulseGold() { const p = $('#goldPill'); p.classList.remove('pulse'); void p.offsetWidth; p.classList.add('pulse'); }
-
-  // ---------- per frame ----------
+  // ---------- per-frame ----------
   function tick(dt) {
-    acc += dt; slowAcc += dt;
-    updateSkillBar();
+    acc += dt;
+    slowAcc += dt;
+    updateActionBar();
     if (acc >= 0.1) {
       acc = 0;
       const S = Game.S;
@@ -721,15 +637,17 @@ const UI = (() => {
       setText($('#gems'), fmt(S.gems));
       setText($('#power'), fmt(Game.power()));
       updateHud();
-      if (page === 'home') refreshHome();
-      $('#bottom-bar button[data-page=skill]').classList.toggle('badge', Object.entries(S.skills).some(([, o]) => o.lv < SKILL_MAX_LV && o.n >= F.skillNeed(o.lv)));
-      $('#bottom-bar button[data-page=home]').classList.toggle('badge', page !== 'home' && S.pending.length > 0);
+      $('#nav button[data-tab=army]').classList.toggle('badge', Battle.mergeCount() > 0);
+      $('#nav button[data-tab=skill]').classList.toggle('badge', Object.entries(S.skills).some(([, o]) => o.lv < SKILL_MAX_LV && o.n >= F.skillNeed(o.lv)));
     }
-    if (slowAcc >= 0.25) { slowAcc = 0; if (page !== 'home') refreshPage(false); }
+    if (slowAcc >= 0.25) {
+      slowAcc = 0;
+      refreshTab(false);
+    }
   }
 
   return {
-    init, tick, toast, showSkillResults, offlinePopup, pulseGold, refreshPage, openModal, closeModal,
-    autoResult, showComparison, get comparing() { return comparing; }, get rolling() { return rolling; }, get page() { return page; },
+    init, tick, toast, summonToast, showSkillResults, showFillResults, offlinePopup, bumpBadge, pulseGold,
+    refreshTab, openModal, closeModal,
   };
 })();
